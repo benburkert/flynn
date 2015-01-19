@@ -179,6 +179,9 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 		releaseRepo:   releaseRepo,
 		providerRepo:  providerRepo,
 		formationRepo: formationRepo,
+		artifactRepo:  artifactRepo,
+		jobRepo:       jobRepo,
+		clusterClient: c.cc,
 	}
 
 	httpRouter.PUT("/apps/:apps_id/formations/:releases_id", api.PutFormation)
@@ -186,6 +189,13 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 	httpRouter.DELETE("/apps/:apps_id/formations/:releases_id", api.DeleteFormation)
 	httpRouter.GET("/apps/:apps_id/formations", api.ListFormations)
 	httpRouter.GET("/formations", api.GetFormations)
+
+	httpRouter.POST("/apps/:apps_id/jobs", api.RunJob)
+	httpRouter.GET("/apps/:apps_id/jobs/:jobs_id", api.GetJob)
+	httpRouter.PUT("/apps/:apps_id/jobs/:jobs_id", api.PutJob)
+	httpRouter.GET("/apps/:apps_id/jobs", api.ListJobs)
+	httpRouter.DELETE("/apps/:apps_id/jobs/:jobs_id", api.KillJob)
+	httpRouter.GET("/apps/:apps_id/jobs/:jobs_id/log", api.JobLog)
 
 	// temporary
 	getAppMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
@@ -206,13 +216,6 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 		}
 		c.Map(thing)
 	}
-
-	r.Post("/apps/:apps_id/jobs", getAppMiddleware, binding.Bind(ct.NewJob{}), runJob)
-	r.Get("/apps/:apps_id/jobs/:jobs_id", getAppMiddleware, getJob)
-	r.Put("/apps/:apps_id/jobs/:jobs_id", getAppMiddleware, binding.Bind(ct.Job{}), putJob)
-	r.Get("/apps/:apps_id/jobs", getAppMiddleware, listJobs)
-	r.Delete("/apps/:apps_id/jobs/:jobs_id", getAppMiddleware, connectHostMiddleware, killJob)
-	r.Get("/apps/:apps_id/jobs/:jobs_id/log", getAppMiddleware, connectHostMiddleware, jobLog)
 
 	r.Put("/apps/:apps_id/release", getAppMiddleware, binding.Bind(releaseID{}), setAppRelease)
 	r.Get("/apps/:apps_id/release", getAppMiddleware, getAppRelease)
@@ -264,6 +267,9 @@ type controllerAPI struct {
 	releaseRepo   *ReleaseRepo
 	providerRepo  *ProviderRepo
 	formationRepo *FormationRepo
+	artifactRepo  *ArtifactRepo
+	jobRepo       *JobRepo
+	clusterClient clusterClient
 }
 
 func (c *controllerAPI) getApp(params httprouter.Params) (*ct.App, error) {
