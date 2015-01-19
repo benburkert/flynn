@@ -25,7 +25,7 @@ type Updater interface {
 
 type lookupFunc func(params httprouter.Params) (interface{}, error)
 
-func crud(r *httprouter.Router, resource string, example interface{}, repo Repository) lookupFunc {
+func crud(r *httprouter.Router, resource string, example interface{}, repo Repository) {
 	resourceType := reflect.TypeOf(example)
 	prefix := "/" + resource
 
@@ -98,6 +98,4 @@ func crud(r *httprouter.Router, resource string, example interface{}, repo Repos
 			httphelper.JSON(rw, 200, app)
 		})
 	}
-
-	return lookup
 }

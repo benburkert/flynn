@@ -168,33 +168,16 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 		m.ServeHTTP(res, req)
 	})
 
-	_getApp := crud(httpRouter, "apps", ct.App{}, appRepo)
-	_getRelease := crud(httpRouter, "releases", ct.Release{}, releaseRepo)
-	getProvider := crud(httpRouter, "providers", ct.Provider{}, providerRepo)
+	crud(httpRouter, "apps", ct.App{}, appRepo)
+	crud(httpRouter, "releases", ct.Release{}, releaseRepo)
+	crud(httpRouter, "providers", ct.Provider{}, providerRepo)
 	crud(httpRouter, "artifacts", ct.Artifact{}, artifactRepo)
 	crud(httpRouter, "keys", ct.Key{}, keyRepo)
 
-	getApp := func(params httprouter.Params) (*ct.App, error) {
-		_app, err := _getApp(params)
-		if err != nil {
-			return nil, err
-		}
-		app, _ := _app.(*ct.App)
-		return app, nil
-	}
-
-	getRelease := func(params httprouter.Params) (*ct.Release, error) {
-		_release, err := _getRelease(params)
-		if err != nil {
-			return nil, err
-		}
-		release, _ := _release.(*ct.Release)
-		return release, nil
-	}
-
 	api := controllerAPI{
-		getApp:        getApp,
-		getRelease:    getRelease,
+		appRepo:       appRepo,
+		releaseRepo:   releaseRepo,
+		providerRepo:  providerRepo,
 		formationRepo: formationRepo,
 	}
 
@@ -206,7 +189,7 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 
 	// temporary
 	getAppMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
-		thing, err := getApp(httprouter.Params{httprouter.Param{"apps_id", params["apps_id"]}})
+		thing, err := api.getApp(httprouter.Params{httprouter.Param{"apps_id", params["apps_id"]}})
 		if err != nil {
 			r.Error(err)
 			return
@@ -216,7 +199,7 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 
 	// temporary
 	getProviderMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
-		thing, err := getProvider(httprouter.Params{httprouter.Param{"providers_id", params["providers_id"]}})
+		thing, err := api.getProvider(httprouter.Params{httprouter.Param{"providers_id", params["providers_id"]}})
 		if err != nil {
 			r.Error(err)
 			return
@@ -277,9 +260,37 @@ func muxHandler(main http.Handler, authKey string) http.Handler {
 }
 
 type controllerAPI struct {
-	getApp        func(httprouter.Params) (*ct.App, error)
-	getRelease    func(httprouter.Params) (*ct.Release, error)
+	appRepo       *AppRepo
+	releaseRepo   *ReleaseRepo
+	providerRepo  *ProviderRepo
 	formationRepo *FormationRepo
+}
+
+func (c *controllerAPI) getApp(params httprouter.Params) (*ct.App, error) {
+	data, err := c.appRepo.Get(params.ByName("apps_id"))
+	if err != nil {
+		return nil, err
+	}
+	app, _ := data.(*ct.App)
+	return app, nil
+}
+
+func (c *controllerAPI) getRelease(params httprouter.Params) (*ct.Release, error) {
+	data, err := c.releaseRepo.Get(params.ByName("releases_id"))
+	if err != nil {
+		return nil, err
+	}
+	release, _ := data.(*ct.Release)
+	return release, nil
+}
+
+func (c *controllerAPI) getProvider(params httprouter.Params) (*ct.Provider, error) {
+	data, err := c.providerRepo.Get(params.ByName("providers_id"))
+	if err != nil {
+		return nil, err
+	}
+	provider, _ := data.(*ct.Provider)
+	return provider, nil
 }
 
 type releaseID struct {
