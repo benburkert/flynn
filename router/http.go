@@ -95,14 +95,14 @@ func (s *HTTPListener) Start() error {
 		return err
 	}
 
-	go s.serve(started)
+	go s.listenAndServe(started)
 	if err := <-started; err != nil {
 		s.ds.StopSync()
 		return err
 	}
 	s.Addr = s.listener.Addr().String()
 
-	go s.serveTLS(started)
+	go s.listenAndServeTLS(started)
 	if err := <-started; err != nil {
 		s.ds.StopSync()
 		s.listener.Close()
@@ -222,7 +222,7 @@ func (h *httpSyncHandler) Remove(id string) error {
 	return nil
 }
 
-func (s *HTTPListener) serve(started chan<- error) {
+func (s *HTTPListener) listenAndServe(started chan<- error) {
 	var err error
 	s.listener, err = reuseport.NewReusablePortListener("tcp4", s.Addr)
 	started <- err
@@ -239,7 +239,7 @@ func (s *HTTPListener) serve(started chan<- error) {
 	}
 }
 
-func (s *HTTPListener) serveTLS(started chan<- error) {
+func (s *HTTPListener) listenAndServeTLS(started chan<- error) {
 	var err error
 	s.tlsListener, err = reuseport.NewReusablePortListener("tcp4", s.TLSAddr)
 	started <- err
