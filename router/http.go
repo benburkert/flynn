@@ -240,6 +240,11 @@ func (s *HTTPListener) listenAndServe(started chan<- error) {
 }
 
 func (s *HTTPListener) listenAndServeTLS(started chan<- error) {
+	_, port, err := net.SplitHostPort(s.TLSAddr)
+	if err != nil {
+		started <- err
+		return
+	}
 	certForHandshake := func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		r := s.findRouteForHost(hello.ServerName)
 		if r == nil {
@@ -255,20 +260,23 @@ func (s *HTTPListener) listenAndServeTLS(started chan<- error) {
 		Certificates:   []tls.Certificate{{}},
 	})
 
+	server := &http.Server{
+		Addr: s.TLSAddr,
+		Handler: fwdProtoHandler{
+			Handler: s,
+			Proto:   "https",
+			Port:    port,
+		},
+	}
+
 	l, err := reuseport.NewReusablePortListener("tcp4", s.TLSAddr)
 	started <- err
 	if err != nil {
 		return
 	}
 	s.tlsListener = tls.NewListener(l, tlsConfig)
-	for {
-		conn, err := s.tlsListener.Accept()
-		if err != nil {
-			// TODO: log error
-			break
-		}
-		go s.handle(conn, true)
-	}
+	// TODO: log error
+	_ = server.Serve(s.tlsListener)
 }
 
 func (s *HTTPListener) findRouteForHost(host string) *httpRoute {
@@ -332,6 +340,16 @@ func (s *HTTPListener) handle(conn net.Conn, isTLS bool) {
 			return
 		}
 	}
+}
+
+func (s *HTTPListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r := s.findRouteForHost(req.Host)
+	if r == nil {
+		failw(w, 404, "Not Found")
+		return
+	}
+
+	r.service.ServeHTTP(w, req)
 }
 
 // A domain served by a listener, associated TLS certs,
@@ -526,6 +544,13 @@ func (s *httpService) handle(req *http.Request, sc *httputil.ServerConn, isTLS, 
 	}
 
 	return
+}
+
+func (s *httpService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	req.Header.Set("X-Request-Start", strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10))
+	req.Header.Set("X-Request-Id", random.UUID())
+
+	// TODO(bgentry): implement rest of this from handle above
 }
 
 type writeCloser interface {
