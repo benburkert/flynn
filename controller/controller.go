@@ -168,11 +168,40 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 		m.ServeHTTP(res, req)
 	})
 
-	getApp := crud(httpRouter, "apps", ct.App{}, appRepo)
-	getRelease := crud(httpRouter, "releases", ct.Release{}, releaseRepo)
+	_getApp := crud(httpRouter, "apps", ct.App{}, appRepo)
+	_getRelease := crud(httpRouter, "releases", ct.Release{}, releaseRepo)
 	getProvider := crud(httpRouter, "providers", ct.Provider{}, providerRepo)
 	crud(httpRouter, "artifacts", ct.Artifact{}, artifactRepo)
 	crud(httpRouter, "keys", ct.Key{}, keyRepo)
+
+	getApp := func(params httprouter.Params) (*ct.App, error) {
+		_app, err := _getApp(params)
+		if err != nil {
+			return nil, err
+		}
+		app, _ := _app.(*ct.App)
+		return app, nil
+	}
+
+	getRelease := func(params httprouter.Params) (*ct.Release, error) {
+		_release, err := _getRelease(params)
+		if err != nil {
+			return nil, err
+		}
+		release, _ := _release.(*ct.Release)
+		return release, nil
+	}
+
+	f := formationAPI{
+		getApp:        getApp,
+		getRelease:    getRelease,
+		formationRepo: formationRepo,
+	}
+
+	httpRouter.PUT("/apps/:apps_id/formations/:releases_id", f.putFormation)
+	httpRouter.GET("/apps/:apps_id/formations/:releases_id", f.getFormation)
+	httpRouter.DELETE("/apps/:apps_id/formations/:releases_id", f.deleteFormation)
+	httpRouter.GET("/apps/:apps_id/formations", f.listFormations)
 
 	// temporary
 	getAppMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
@@ -193,21 +222,6 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 		}
 		c.Map(thing)
 	}
-
-	// temporary
-	getReleaseMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
-		thing, err := getRelease(httprouter.Params{httprouter.Param{"releases_id", params["releases_id"]}})
-		if err != nil {
-			r.Error(err)
-			return
-		}
-		c.Map(thing)
-	}
-
-	r.Put("/apps/:apps_id/formations/:releases_id", getAppMiddleware, getReleaseMiddleware, binding.Bind(ct.Formation{}), putFormation)
-	r.Get("/apps/:apps_id/formations/:releases_id", getAppMiddleware, getFormationMiddleware, getFormation)
-	r.Delete("/apps/:apps_id/formations/:releases_id", getAppMiddleware, getFormationMiddleware, deleteFormation)
-	r.Get("/apps/:apps_id/formations", getAppMiddleware, listFormations)
 
 	r.Post("/apps/:apps_id/jobs", getAppMiddleware, binding.Bind(ct.NewJob{}), runJob)
 	r.Get("/apps/:apps_id/jobs/:jobs_id", getAppMiddleware, getJob)
@@ -263,53 +277,94 @@ func muxHandler(main http.Handler, authKey string) http.Handler {
 	})
 }
 
-func putFormation(formation ct.Formation, app *ct.App, release *ct.Release, repo *FormationRepo, r ResponseHelper) {
+type formationAPI struct {
+	getApp        func(httprouter.Params) (*ct.App, error)
+	getRelease    func(httprouter.Params) (*ct.Release, error)
+	formationRepo *FormationRepo
+}
+
+func (f *formationAPI) putFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	app, err := f.getApp(params)
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+	release, err := f.getRelease(params)
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+
+	var formation ct.Formation
+	dec := json.NewDecoder(req.Body)
+	err = dec.Decode(&formation)
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+
 	formation.AppID = app.ID
 	formation.ReleaseID = release.ID
 	if app.Protected {
 		for typ := range release.Processes {
 			if formation.Processes[typ] == 0 {
-				r.Error(ct.ValidationError{Message: "unable to scale to zero, app is protected"})
+				respondWithError(w, ct.ValidationError{Message: "unable to scale to zero, app is protected"})
 				return
 			}
 		}
 	}
-	if err := repo.Add(&formation); err != nil {
-		r.Error(err)
+	if err = f.formationRepo.Add(&formation); err != nil {
+		respondWithError(w, err)
 		return
 	}
-	r.JSON(200, &formation)
+	httphelper.JSON(w, 200, &formation)
 }
 
-func getFormationMiddleware(c martini.Context, app *ct.App, params martini.Params, repo *FormationRepo, r ResponseHelper) {
-	formation, err := repo.Get(app.ID, params["releases_id"])
+func (f *formationAPI) getFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	app, err := f.getApp(params)
 	if err != nil {
-		r.Error(err)
+		respondWithError(w, err)
 		return
 	}
-	c.Map(formation)
-}
-
-func getFormation(formation *ct.Formation, r ResponseHelper) {
-	r.JSON(200, formation)
-}
-
-func deleteFormation(formation *ct.Formation, repo *FormationRepo, r ResponseHelper) {
-	err := repo.Remove(formation.AppID, formation.ReleaseID)
+	formation, err := f.formationRepo.Get(app.ID, params.ByName("releases_id"))
 	if err != nil {
-		r.Error(err)
+		respondWithError(w, err)
 		return
 	}
-	r.WriteHeader(200)
+	httphelper.JSON(w, 200, formation)
 }
 
-func listFormations(app *ct.App, repo *FormationRepo, r ResponseHelper) {
-	list, err := repo.List(app.ID)
+func (f *formationAPI) deleteFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	app, err := f.getApp(params)
 	if err != nil {
-		r.Error(err)
+		respondWithError(w, err)
 		return
 	}
-	r.JSON(200, list)
+	formation, err := f.formationRepo.Get(app.ID, params.ByName("releases_id"))
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+	err = f.formationRepo.Remove(app.ID, formation.ReleaseID)
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+	w.WriteHeader(200)
+}
+
+func (f *formationAPI) listFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	app, err := f.getApp(params)
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+	list, err := f.formationRepo.List(app.ID)
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+	httphelper.JSON(w, 200, list)
 }
 
 type releaseID struct {
