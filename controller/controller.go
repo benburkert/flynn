@@ -26,7 +26,6 @@ import (
 	"github.com/flynn/flynn/pkg/postgres"
 	"github.com/flynn/flynn/pkg/resource"
 	"github.com/flynn/flynn/pkg/shutdown"
-	"github.com/flynn/flynn/pkg/sse"
 	routerc "github.com/flynn/flynn/router/client"
 	"github.com/flynn/flynn/router/types"
 )
@@ -193,17 +192,17 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 		return release, nil
 	}
 
-	f := formationAPI{
+	api := controllerAPI{
 		getApp:        getApp,
 		getRelease:    getRelease,
 		formationRepo: formationRepo,
 	}
 
-	httpRouter.PUT("/apps/:apps_id/formations/:releases_id", f.putFormation)
-	httpRouter.GET("/apps/:apps_id/formations/:releases_id", f.getFormation)
-	httpRouter.DELETE("/apps/:apps_id/formations/:releases_id", f.deleteFormation)
-	httpRouter.GET("/apps/:apps_id/formations", f.listFormations)
-	httpRouter.GET("/formations", f.getFormations)
+	httpRouter.PUT("/apps/:apps_id/formations/:releases_id", api.putFormation)
+	httpRouter.GET("/apps/:apps_id/formations/:releases_id", api.getFormation)
+	httpRouter.DELETE("/apps/:apps_id/formations/:releases_id", api.deleteFormation)
+	httpRouter.GET("/apps/:apps_id/formations", api.listFormations)
+	httpRouter.GET("/formations", api.getFormations)
 
 	// temporary
 	getAppMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
@@ -277,122 +276,10 @@ func muxHandler(main http.Handler, authKey string) http.Handler {
 	})
 }
 
-type formationAPI struct {
+type controllerAPI struct {
 	getApp        func(httprouter.Params) (*ct.App, error)
 	getRelease    func(httprouter.Params) (*ct.Release, error)
 	formationRepo *FormationRepo
-}
-
-func (f *formationAPI) putFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-	app, err := f.getApp(params)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	release, err := f.getRelease(params)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-
-	var formation ct.Formation
-	dec := json.NewDecoder(req.Body)
-	err = dec.Decode(&formation)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-
-	formation.AppID = app.ID
-	formation.ReleaseID = release.ID
-	if app.Protected {
-		for typ := range release.Processes {
-			if formation.Processes[typ] == 0 {
-				respondWithError(w, ct.ValidationError{Message: "unable to scale to zero, app is protected"})
-				return
-			}
-		}
-	}
-	if err = f.formationRepo.Add(&formation); err != nil {
-		respondWithError(w, err)
-		return
-	}
-	httphelper.JSON(w, 200, &formation)
-}
-
-func (f *formationAPI) getFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-	app, err := f.getApp(params)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	formation, err := f.formationRepo.Get(app.ID, params.ByName("releases_id"))
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	httphelper.JSON(w, 200, formation)
-}
-
-func (f *formationAPI) deleteFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-	app, err := f.getApp(params)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	formation, err := f.formationRepo.Get(app.ID, params.ByName("releases_id"))
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	err = f.formationRepo.Remove(app.ID, formation.ReleaseID)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	w.WriteHeader(200)
-}
-
-func (f *formationAPI) listFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-	app, err := f.getApp(params)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	list, err := f.formationRepo.List(app.ID)
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	httphelper.JSON(w, 200, list)
-}
-
-func (f *formationAPI) getFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-	ch := make(chan *ct.ExpandedFormation)
-	stopCh := make(chan struct{})
-	wr := sse.NewWriter(w)
-	enc := json.NewEncoder(wr)
-	since, err := time.Parse(time.RFC3339, req.FormValue("since"))
-	if err != nil {
-		respondWithError(w, err)
-		return
-	}
-	if err := f.formationRepo.Subscribe(ch, stopCh, since); err != nil {
-		respondWithError(w, err)
-		return
-	}
-	go func() {
-		<-w.(http.CloseNotifier).CloseNotify()
-		f.formationRepo.Unsubscribe(ch)
-		close(stopCh)
-	}()
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.WriteHeader(200)
-	wr.Flush()
-	for data := range ch {
-		enc.Encode(data)
-		wr.Flush()
-	}
 }
 
 type releaseID struct {
