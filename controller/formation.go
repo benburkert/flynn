@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,10 +10,8 @@ import (
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/flynn/go-sql"
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/flynn/pq"
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/flynn/pq/hstore"
-	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/go-martini/martini"
 	ct "github.com/flynn/flynn/controller/types"
 	"github.com/flynn/flynn/pkg/postgres"
-	"github.com/flynn/flynn/pkg/sse"
 )
 
 type formationKey struct {
@@ -249,33 +245,5 @@ func (r *FormationRepo) Unsubscribe(ch chan *ct.ExpandedFormation) {
 	delete(r.subscriptions, ch)
 	if len(r.subscriptions) == 0 {
 		r.stopListener <- struct{}{}
-	}
-}
-
-func getFormations(repo *FormationRepo, req *http.Request, params martini.Params, w http.ResponseWriter, r ResponseHelper) {
-	ch := make(chan *ct.ExpandedFormation)
-	stopCh := make(chan struct{})
-	wr := sse.NewWriter(w)
-	enc := json.NewEncoder(wr)
-	since, err := time.Parse(time.RFC3339, req.FormValue("since"))
-	if err != nil {
-		r.Error(err)
-		return
-	}
-	if err := repo.Subscribe(ch, stopCh, since); err != nil {
-		r.Error(err)
-		return
-	}
-	go func() {
-		<-w.(http.CloseNotifier).CloseNotify()
-		repo.Unsubscribe(ch)
-		close(stopCh)
-	}()
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.WriteHeader(200)
-	wr.Flush()
-	for data := range ch {
-		enc.Encode(data)
-		wr.Flush()
 	}
 }

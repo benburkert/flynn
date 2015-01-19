@@ -26,6 +26,7 @@ import (
 	"github.com/flynn/flynn/pkg/postgres"
 	"github.com/flynn/flynn/pkg/resource"
 	"github.com/flynn/flynn/pkg/shutdown"
+	"github.com/flynn/flynn/pkg/sse"
 	routerc "github.com/flynn/flynn/router/client"
 	"github.com/flynn/flynn/router/types"
 )
@@ -202,6 +203,7 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 	httpRouter.GET("/apps/:apps_id/formations/:releases_id", f.getFormation)
 	httpRouter.DELETE("/apps/:apps_id/formations/:releases_id", f.deleteFormation)
 	httpRouter.GET("/apps/:apps_id/formations", f.listFormations)
+	httpRouter.GET("/formations", f.getFormations)
 
 	// temporary
 	getAppMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
@@ -243,8 +245,6 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 	r.Get("/apps/:apps_id/routes", getAppMiddleware, getRouteList)
 	r.Get("/apps/:apps_id/routes/:routes_type/:routes_id", getAppMiddleware, getRouteMiddleware, getRoute)
 	r.Delete("/apps/:apps_id/routes/:routes_type/:routes_id", getAppMiddleware, getRouteMiddleware, deleteRoute)
-
-	r.Get("/formations", getFormations)
 
 	return muxHandler(httpRouter, c.key), m
 }
@@ -365,6 +365,34 @@ func (f *formationAPI) listFormations(w http.ResponseWriter, req *http.Request, 
 		return
 	}
 	httphelper.JSON(w, 200, list)
+}
+
+func (f *formationAPI) getFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+	ch := make(chan *ct.ExpandedFormation)
+	stopCh := make(chan struct{})
+	wr := sse.NewWriter(w)
+	enc := json.NewEncoder(wr)
+	since, err := time.Parse(time.RFC3339, req.FormValue("since"))
+	if err != nil {
+		respondWithError(w, err)
+		return
+	}
+	if err := f.formationRepo.Subscribe(ch, stopCh, since); err != nil {
+		respondWithError(w, err)
+		return
+	}
+	go func() {
+		<-w.(http.CloseNotifier).CloseNotify()
+		f.formationRepo.Unsubscribe(ch)
+		close(stopCh)
+	}()
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.WriteHeader(200)
+	wr.Flush()
+	for data := range ch {
+		enc.Encode(data)
+		wr.Flush()
+	}
 }
 
 type releaseID struct {
