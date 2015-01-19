@@ -253,7 +253,7 @@ func (r *FormationRepo) Unsubscribe(ch chan *ct.ExpandedFormation) {
 	}
 }
 
-func (c *controllerAPI) putFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+func (c *controllerAPI) PutFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	app, err := c.getApp(params)
 	if err != nil {
 		respondWithError(w, err)
@@ -290,7 +290,7 @@ func (c *controllerAPI) putFormation(w http.ResponseWriter, req *http.Request, p
 	httphelper.JSON(w, 200, &formation)
 }
 
-func (c *controllerAPI) getFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+func (c *controllerAPI) GetFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	app, err := c.getApp(params)
 	if err != nil {
 		respondWithError(w, err)
@@ -304,7 +304,7 @@ func (c *controllerAPI) getFormation(w http.ResponseWriter, req *http.Request, p
 	httphelper.JSON(w, 200, formation)
 }
 
-func (c *controllerAPI) deleteFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+func (c *controllerAPI) DeleteFormation(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	app, err := c.getApp(params)
 	if err != nil {
 		respondWithError(w, err)
@@ -323,7 +323,7 @@ func (c *controllerAPI) deleteFormation(w http.ResponseWriter, req *http.Request
 	w.WriteHeader(200)
 }
 
-func (c *controllerAPI) listFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+func (c *controllerAPI) ListFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	app, err := c.getApp(params)
 	if err != nil {
 		respondWithError(w, err)
@@ -337,7 +337,7 @@ func (c *controllerAPI) listFormations(w http.ResponseWriter, req *http.Request,
 	httphelper.JSON(w, 200, list)
 }
 
-func (c *controllerAPI) getFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
+func (c *controllerAPI) GetFormations(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 	ch := make(chan *ct.ExpandedFormation)
 	stopCh := make(chan struct{})
 	wr := sse.NewWriter(w)

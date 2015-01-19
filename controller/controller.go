@@ -181,11 +181,11 @@ func appHandler(c handlerConfig) (http.Handler, *martini.Martini) {
 		formationRepo: formationRepo,
 	}
 
-	httpRouter.PUT("/apps/:apps_id/formations/:releases_id", api.putFormation)
-	httpRouter.GET("/apps/:apps_id/formations/:releases_id", api.getFormation)
-	httpRouter.DELETE("/apps/:apps_id/formations/:releases_id", api.deleteFormation)
-	httpRouter.GET("/apps/:apps_id/formations", api.listFormations)
-	httpRouter.GET("/formations", api.getFormations)
+	httpRouter.PUT("/apps/:apps_id/formations/:releases_id", api.PutFormation)
+	httpRouter.GET("/apps/:apps_id/formations/:releases_id", api.GetFormation)
+	httpRouter.DELETE("/apps/:apps_id/formations/:releases_id", api.DeleteFormation)
+	httpRouter.GET("/apps/:apps_id/formations", api.ListFormations)
+	httpRouter.GET("/formations", api.GetFormations)
 
 	// temporary
 	getAppMiddleware := func(c martini.Context, params martini.Params, req *http.Request, r ResponseHelper) {
