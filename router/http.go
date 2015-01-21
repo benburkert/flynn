@@ -22,6 +22,7 @@ import (
 	"github.com/flynn/flynn/pkg/random"
 	"github.com/flynn/flynn/pkg/tlsconfig"
 	"github.com/flynn/flynn/router/types"
+	"golang.org/x/net/context"
 )
 
 type HTTPListener struct {
@@ -84,7 +85,7 @@ func (s *HTTPListener) Close() error {
 	return nil
 }
 
-func (s *HTTPListener) Start() error {
+func (s *HTTPListener) Start(ctx context.Context) error {
 	started := make(chan error)
 
 	go s.ds.Sync(&httpSyncHandler{l: s}, started)
@@ -92,14 +93,14 @@ func (s *HTTPListener) Start() error {
 		return err
 	}
 
-	go s.listenAndServe(started)
+	go s.listenAndServe(ctx, started)
 	if err := <-started; err != nil {
 		s.ds.StopSync()
 		return err
 	}
 	s.Addr = s.listener.Addr().String()
 
-	go s.listenAndServeTLS(started)
+	go s.listenAndServeTLS(ctx, started)
 	if err := <-started; err != nil {
 		s.ds.StopSync()
 		s.listener.Close()
@@ -219,7 +220,7 @@ func (h *httpSyncHandler) Remove(id string) error {
 	return nil
 }
 
-func (s *HTTPListener) listenAndServe(started chan<- error) {
+func (s *HTTPListener) listenAndServe(ctx context.Context, started chan<- error) {
 	_, port, err := net.SplitHostPort(s.Addr)
 	if err != nil {
 		started <- err
@@ -232,12 +233,8 @@ func (s *HTTPListener) listenAndServe(started chan<- error) {
 	}
 
 	server := &http.Server{
-		Addr: s.Addr,
-		Handler: fwdProtoHandler{
-			Handler: s,
-			Proto:   "http",
-			Port:    port,
-		},
+		Addr:    s.Addr,
+		Handler: s.httpHandlerStack(ctx, "http", port),
 	}
 
 	// TODO: log error
@@ -246,7 +243,7 @@ func (s *HTTPListener) listenAndServe(started chan<- error) {
 
 var errMissingTLS = errors.New("router: route not found or TLS not configured")
 
-func (s *HTTPListener) listenAndServeTLS(started chan<- error) {
+func (s *HTTPListener) listenAndServeTLS(ctx context.Context, started chan<- error) {
 	_, port, err := net.SplitHostPort(s.TLSAddr)
 	if err != nil {
 		started <- err
@@ -268,12 +265,8 @@ func (s *HTTPListener) listenAndServeTLS(started chan<- error) {
 	})
 
 	server := &http.Server{
-		Addr: s.TLSAddr,
-		Handler: fwdProtoHandler{
-			Handler: s,
-			Proto:   "https",
-			Port:    port,
-		},
+		Addr:    s.TLSAddr,
+		Handler: s.httpHandlerStack(ctx, "https", port),
 	}
 
 	l, err := reuseport.NewReusablePortListener("tcp4", s.TLSAddr)
@@ -284,6 +277,15 @@ func (s *HTTPListener) listenAndServeTLS(started chan<- error) {
 	s.tlsListener = tls.NewListener(l, tlsConfig)
 	// TODO: log error
 	_ = server.Serve(s.tlsListener)
+}
+
+func (s *HTTPListener) httpHandlerStack(ctx context.Context, proto, port string) http.Handler {
+	handler := fwdProtoHandler{
+		Handler: s,
+		Proto:   proto,
+		Port:    port,
+	}
+	return ServerHandler(ctx, handler)
 }
 
 func (s *HTTPListener) findRouteForHost(host string) *httpRoute {
@@ -311,7 +313,7 @@ func fail(w http.ResponseWriter, code int, msg string) {
 
 const hdrUseStickySessions = "Flynn-Use-Sticky-Sessions"
 
-func (s *HTTPListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (s *HTTPListener) ServeHTTP(ctx context.Context, w http.ResponseWriter, req *http.Request) {
 	r := s.findRouteForHost(req.Host)
 	if r == nil {
 		fail(w, 404, "Not Found")
@@ -324,7 +326,7 @@ func (s *HTTPListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		req.Header.Set(hdrUseStickySessions, "true")
 	}
 
-	r.service.ServeHTTP(w, req)
+	r.service.ServeHTTP(ctx, w, req)
 }
 
 // A domain served by a listener, associated TLS certs,
@@ -395,7 +397,7 @@ func (s *httpService) newStickyCookie(backend string) *http.Cookie {
 	return &http.Cookie{Name: stickyCookie, Value: base64.StdEncoding.EncodeToString(out), Path: "/"}
 }
 
-func (s *httpService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (s *httpService) ServeHTTP(_ context.Context, w http.ResponseWriter, req *http.Request) {
 	req.Header.Set("X-Request-Start", strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10))
 	req.Header.Set("X-Request-Id", random.UUID())
 

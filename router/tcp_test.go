@@ -9,6 +9,7 @@ import (
 	. "github.com/flynn/flynn/Godeps/_workspace/src/github.com/flynn/go-check"
 	"github.com/flynn/flynn/discoverd/testutil/etcdrunner"
 	"github.com/flynn/flynn/router/types"
+	"golang.org/x/net/context"
 )
 
 func NewTCPTestServer(prefix string) *TCPTestServer {
@@ -66,7 +67,7 @@ func newTCPListenerClients(t etcdrunner.TestingT, etcd EtcdClient, discoverd dis
 		NewTCPListener("127.0.0.1", firstTCPPort, lastTCPPort, NewEtcdDataStore(etcd, "/router/tcp/"), discoverd),
 		cleanup,
 	}
-	if err := l.Start(); err != nil {
+	if err := l.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return l, discoverd

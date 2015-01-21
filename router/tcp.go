@@ -12,6 +12,7 @@ import (
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/kavu/go_reuseport"
 	"github.com/flynn/flynn/discoverd/client"
 	"github.com/flynn/flynn/router/types"
+	"golang.org/x/net/context"
 )
 
 func NewTCPListener(ip string, startPort, endPort int, ds DataStore, dc DiscoverdClient) *TCPListener {
@@ -107,7 +108,7 @@ func (l *TCPListener) RemoveRoute(id string) error {
 	return l.ds.Remove(id)
 }
 
-func (l *TCPListener) Start() error {
+func (l *TCPListener) Start(_ context.Context) error {
 	started := make(chan error)
 
 	if l.startPort != 0 && l.endPort != 0 {

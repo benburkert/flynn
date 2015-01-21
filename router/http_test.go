@@ -15,6 +15,7 @@ import (
 	"github.com/flynn/flynn/Godeps/_workspace/src/golang.org/x/net/websocket"
 	"github.com/flynn/flynn/discoverd/testutil/etcdrunner"
 	"github.com/flynn/flynn/router/types"
+	"golang.org/x/net/context"
 )
 
 var httpClient = &http.Client{
@@ -82,7 +83,7 @@ func newHTTPListenerClients(t etcdrunner.TestingT, etcd EtcdClient, discoverd di
 		NewHTTPListener("127.0.0.1:0", "127.0.0.1:0", nil, NewEtcdDataStore(etcd, "/router/http/"), discoverd),
 		cleanup,
 	}
-	if err := l.Start(); err != nil {
+	if err := l.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return l, discoverd

@@ -15,10 +15,11 @@ import (
 	"github.com/flynn/flynn/discoverd/client"
 	"github.com/flynn/flynn/pkg/shutdown"
 	"github.com/flynn/flynn/router/types"
+	"golang.org/x/net/context"
 )
 
 type Listener interface {
-	Start() error
+	Start(ctx context.Context) error
 	Close() error
 	AddRoute(*router.Route) error
 	SetRoute(*router.Route) error
@@ -32,11 +33,11 @@ type Router struct {
 	TCP  Listener
 }
 
-func (s *Router) ListenAndServe(quit <-chan struct{}) error {
-	if err := s.HTTP.Start(); err != nil {
+func (s *Router) ListenAndServe(ctx context.Context, quit <-chan struct{}) error {
+	if err := s.HTTP.Start(ctx); err != nil {
 		return err
 	}
-	if err := s.TCP.Start(); err != nil {
+	if err := s.TCP.Start(ctx); err != nil {
 		return err
 	}
 	<-quit
@@ -110,7 +111,8 @@ func main() {
 	r.TCP = NewTCPListener(*tcpIP, *tcpRangeStart, *tcpRangeEnd, NewEtcdDataStore(etcdc, path.Join(prefix, "tcp/")), d)
 	r.HTTP = NewHTTPListener(*httpAddr, *httpsAddr, cookieKey, NewEtcdDataStore(etcdc, path.Join(prefix, "http/")), d)
 
-	go func() { log.Fatal(r.ListenAndServe(nil)) }()
+	ctx := context.TODO()
+	go func() { log.Fatal(r.ListenAndServe(ctx, nil)) }()
 	listener, err := reuseport.NewReusablePortListener("tcp4", *apiAddr)
 	if err != nil {
 		log.Fatal(err)
