@@ -63,16 +63,28 @@ func copyHeader(dst, src http.Header) {
 
 // Hop-by-hop headers. These are removed when sent to the backend.
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
-var httpHopHeaders = []string{
-	"Connection",
-	"Keep-Alive",
-	"Proxy-Authenticate",
-	"Proxy-Authorization",
-	"Te", // canonicalized version of "TE"
-	"Trailers",
-	"Transfer-Encoding",
-	"Upgrade",
-}
+var (
+	httpHopHeaders = []string{
+		"Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te", // canonicalized version of "TE"
+		"Trailers",
+		"Transfer-Encoding",
+		"Upgrade",
+	}
+
+	// retain "Connection" & "Upgrade" for the WebSocket protocol handshake.
+	wsHopHeaders = []string{
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te", // canonicalized version of "TE"
+		"Trailers",
+		"Transfer-Encoding",
+	}
+)
 
 func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, req *http.Request) {
 	transport := p.Transport
