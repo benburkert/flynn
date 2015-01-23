@@ -129,7 +129,7 @@ type stickyTransport struct {
 }
 
 const (
-	stickyCookie = "_backend"
+	StickyCookie = "_backend"
 )
 
 func (t *stickyTransport) RoundTripHTTP(ctx context.Context, req *http.Request) (*http.Response, error) {
@@ -194,7 +194,7 @@ func (t *stickyTransport) ConnectWebSocket(ctx context.Context, req *http.Reques
 }
 
 func (t *stickyTransport) getStickyCookieBackend(req *http.Request) string {
-	cookie, err := req.Cookie(stickyCookie)
+	cookie, err := req.Cookie(StickyCookie)
 	if err != nil {
 		return ""
 	}
@@ -208,7 +208,7 @@ func (t *stickyTransport) getStickyCookieBackend(req *http.Request) string {
 
 func (t *stickyTransport) setStickyCookieBackend(res *http.Response, backend string) {
 	cookie := http.Cookie{
-		Name:  stickyCookie,
+		Name:  StickyCookie,
 		Value: base64.StdEncoding.EncodeToString(t.encrypt([]byte(backend))),
 		Path:  "/",
 	}
