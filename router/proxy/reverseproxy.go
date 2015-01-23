@@ -63,7 +63,7 @@ func copyHeader(dst, src http.Header) {
 
 // Hop-by-hop headers. These are removed when sent to the backend.
 // http://www.w3.org/Protocols/rfc2616/rfc2616-sec13.html
-var hopHeaders = []string{
+var httpHopHeaders = []string{
 	"Connection",
 	"Keep-Alive",
 	"Proxy-Authenticate",
@@ -95,7 +95,7 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 	// is modifying the same underlying map from req (shallow
 	// copied above) so we only copy it if necessary.
 	copiedHeaders := false
-	for _, h := range hopHeaders {
+	for _, h := range httpHopHeaders {
 		if outreq.Header.Get(h) != "" {
 			if !copiedHeaders {
 				outreq.Header = make(http.Header)
@@ -114,7 +114,7 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 	}
 	defer res.Body.Close()
 
-	for _, h := range hopHeaders {
+	for _, h := range httpHopHeaders {
 		res.Header.Del(h)
 	}
 
