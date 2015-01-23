@@ -12,13 +12,14 @@ import (
 	"golang.org/x/net/context"
 )
 
-// RoundTripper is an interface representing the ability to execute a
-// single HTTP transaction, obtaining the Response for a given Request.
+// Transporter is an interface representing the ability to transport downstream
+// connection data to an upstream host.  It can execute a single HTTP transaction,
+// obtaining the Response for a given Request. It can establish WebSocket
+// connections, obtaining the handshake response and the WebSocket connection.
 //
-// A RoundTripper must be safe for concurrent use by multiple
-// goroutines.
-type RoundTripper interface {
-	// RoundTrip executes a single HTTP transaction, returning
+// A Transporter must be safe for concurrent use by multiple goroutines.
+type Transporter interface {
+	// RoundTripHTTP executes a single HTTP transaction, returning
 	// the Response for the request req.  RoundTrip should not
 	// attempt to interpret the response.  In particular,
 	// RoundTrip must return err == nil if it obtained a response,
@@ -28,9 +29,9 @@ type RoundTripper interface {
 	// higher-level protocol details such as redirects,
 	// authentication, or cookies.
 	//
-	// RoundTrip should not modify the request, except for
+	// RoundTripHTTP should not modify the request, except for
 	// consuming and closing the Body, including on errors. The
 	// request's URL and Header fields are guaranteed to be
 	// initialized.
-	RoundTrip(context.Context, *http.Request) (*http.Response, error)
+	RoundTripHTTP(context.Context, *http.Request) (*http.Response, error)
 }

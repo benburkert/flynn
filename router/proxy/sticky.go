@@ -48,7 +48,7 @@ func (s *Sticky) ServeHTTP(ctx context.Context, w http.ResponseWriter, req *http
 	s.ReverseProxy.ServeHTTP(ctx, w, req)
 }
 
-func (s *Sticky) RoundTrip(ctx context.Context, req *http.Request) (*http.Response, error) {
+func (s *Sticky) RoundTripHTTP(ctx context.Context, req *http.Request) (*http.Response, error) {
 	s.mu.RLock()
 	backends := make([]string, len(s.backends))
 	copy(backends, s.backends)

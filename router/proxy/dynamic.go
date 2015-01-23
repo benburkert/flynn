@@ -46,7 +46,7 @@ func (d *Dynamic) UpdateBackends(backends []string) {
 	d.backends = backends
 }
 
-func (d *Dynamic) RoundTrip(ctx context.Context, req *http.Request) (*http.Response, error) {
+func (d *Dynamic) RoundTripHTTP(ctx context.Context, req *http.Request) (*http.Response, error) {
 	d.mu.RLock()
 	backends := make([]string, len(d.backends))
 	copy(backends, d.backends)

@@ -9,7 +9,6 @@ package proxy
 import (
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -39,8 +38,7 @@ type ReverseProxy struct {
 	ResponseDirector func(context.Context, *http.Response)
 
 	// The transport used to perform proxy requests.
-	// If nil, http.DefaultTransport is used.
-	Transport RoundTripper
+	Transport Transporter
 
 	// FlushInterval specifies the flush interval
 	// to flush to the client while copying the
@@ -120,7 +118,7 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 		}
 	}
 
-	res, err := transport.RoundTrip(ctx, outreq)
+	res, err := transport.RoundTripHTTP(ctx, outreq)
 	if err != nil {
 		p.logf("http: proxy error: %v", err)
 		rw.WriteHeader(http.StatusInternalServerError)
