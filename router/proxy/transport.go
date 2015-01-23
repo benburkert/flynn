@@ -153,8 +153,8 @@ func (t *stickyTransport) RoundTripHTTP(ctx context.Context, req *http.Request) 
 		return res, err
 	}
 
-	if stickyBackend != res.Request.URL.Host {
-		t.setStickyCookieBackend(res, stickyBackend)
+	if backend := res.Request.URL.Host; backend != stickyBackend {
+		t.setStickyCookieBackend(res, backend)
 	}
 
 	return res, nil
@@ -189,8 +189,9 @@ func (t *stickyTransport) ConnectWebSocket(ctx context.Context, req *http.Reques
 		return nil, nil, nil, err
 	}
 
-	if webSocketHandshakeSuccess(res) && stickyBackend != res.Request.URL.Host {
-		t.setStickyCookieBackend(res, stickyBackend)
+	backend := res.Request.URL.Host
+	if webSocketHandshakeSuccess(res) && backend != stickyBackend {
+		t.setStickyCookieBackend(res, backend)
 	}
 
 	return res, conn, bufrw, err
