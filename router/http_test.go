@@ -14,6 +14,7 @@ import (
 	. "github.com/flynn/flynn/Godeps/_workspace/src/github.com/flynn/go-check"
 	"github.com/flynn/flynn/Godeps/_workspace/src/golang.org/x/net/websocket"
 	"github.com/flynn/flynn/discoverd/testutil/etcdrunner"
+	"github.com/flynn/flynn/router/proxy"
 	"github.com/flynn/flynn/router/types"
 )
 
@@ -191,7 +192,7 @@ func assertGetCookie(c *C, url, host, expected string, cookie *http.Cookie) *htt
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, expected)
 	for _, c := range res.Cookies() {
-		if c.Name == stickyCookie {
+		if c.Name == proxy.StickyCookie {
 			return c
 		}
 	}
@@ -469,7 +470,7 @@ func (s *S) TestStickyHTTPRouteWebsocket(c *C) {
 
 			// reuse the session cookie if present
 			for _, c := range res.Cookies() {
-				if c.Name == stickyCookie {
+				if c.Name == proxy.StickyCookie {
 					cookieSet = true
 					sessionCookie = c
 				}

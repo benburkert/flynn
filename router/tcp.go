@@ -11,6 +11,7 @@ import (
 
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/kavu/go_reuseport"
 	"github.com/flynn/flynn/discoverd/client"
+	"github.com/flynn/flynn/pkg/random"
 	"github.com/flynn/flynn/router/types"
 )
 
@@ -317,4 +318,12 @@ func (s *tcpService) handle(conn net.Conn) {
 	conn.(*net.TCPConn).CloseWrite()
 	<-done
 	return
+}
+
+func shuffle(s []string) []string {
+	for i := len(s) - 1; i > 0; i-- {
+		j := random.Math.Intn(i + 1)
+		s[i], s[j] = s[j], s[i]
+	}
+	return s
 }
