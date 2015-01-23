@@ -409,9 +409,22 @@ func (s *S) TestStickyHTTPRoute(c *C) {
 	}
 }
 
+func wsHandshakeTestHandler(id string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if isWebSocketUpgrade(req) {
+			w.Header().Set("Connection", "Upgrade")
+			w.Header().Set("Upgrade", "websocket")
+			w.Header().Set("Backend-Id", id)
+			w.WriteHeader(http.StatusSwitchingProtocols)
+		} else {
+			http.NotFound(w, req)
+		}
+	})
+}
+
 func (s *S) TestStickyHTTPRouteWebsocket(c *C) {
-	srv1 := httptest.NewServer(httpTestHandler("1"))
-	srv2 := httptest.NewServer(httpTestHandler("2"))
+	srv1 := httptest.NewServer(wsHandshakeTestHandler("1"))
+	srv2 := httptest.NewServer(wsHandshakeTestHandler("2"))
 	defer srv1.Close()
 	defer srv2.Close()
 
@@ -457,16 +470,13 @@ func (s *S) TestStickyHTTPRouteWebsocket(c *C) {
 				req.AddCookie(sessionCookie)
 			}
 			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "websocket")
 			res, err := httpClient.Do(req)
 			defer res.Body.Close()
 
 			c.Assert(err, IsNil)
-			c.Assert(res.StatusCode, Equals, 200)
-			data, err := ioutil.ReadAll(res.Body)
-			c.Assert(err, IsNil)
-			c.Assert(string(data), Equals, step.backend)
-			// make sure unsuccessful upgrade conn was closed
-			c.Assert(res.Close, Equals, true)
+			c.Assert(res.StatusCode, Equals, 101)
+			c.Assert(res.Header.Get("Backend-Id"), Equals, step.backend)
 
 			// reuse the session cookie if present
 			for _, c := range res.Cookies() {
@@ -484,12 +494,7 @@ func (s *S) TestStickyHTTPRouteWebsocket(c *C) {
 }
 
 func (s *S) TestNoStickyHeaderAtBackend(c *C) {
-	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		_, ok := req.Header[hdrUseStickySessions]
-		c.Assert(ok, Equals, false)
-	})
-
-	srv := httptest.NewServer(h)
+	srv := httptest.NewServer(httpTestHandler(""))
 	defer srv.Close()
 
 	l, discoverd := newHTTPListener(c)
@@ -528,7 +533,6 @@ func (s *S) TestClosedBackendRetriesAnotherBackend(c *C) {
 	defer l.Close()
 
 	srv1 := httptest.NewServer(httpTestHandler("1"))
-	srv1.Close() // close this server immediately
 	srv2 := httptest.NewServer(httpTestHandler("2"))
 	defer srv2.Close()
 
@@ -538,12 +542,17 @@ func (s *S) TestClosedBackendRetriesAnotherBackend(c *C) {
 		Sticky:  true,
 	}).ToRoute())
 	discoverdRegisterHTTPService(c, l, "example-com", srv1.Listener.Addr().String())
-	discoverdRegisterHTTPService(c, l, "example-com", srv2.Listener.Addr().String())
+
+	stickyCookie := assertGet(c, "http://"+l.Addr, "example.com", "1")
 
 	req := newReq("http://"+l.Addr, "example.com")
 	// add a cookie to stick to srv1
-	stickyCookie := l.findRouteForHost("example.com").service.newStickyCookie(srv1.Listener.Addr().String())
 	req.AddCookie(stickyCookie)
+
+	// close srv1, register srv2
+	srv1.Close()
+	discoverdRegisterHTTPService(c, l, "example-com", srv2.Listener.Addr().String())
+
 	res, err := newHTTPClient("example.com").Do(req)
 	c.Assert(err, IsNil)
 	defer res.Body.Close()
