@@ -6,7 +6,11 @@
 
 package proxy
 
-import "net/http"
+import (
+	"net/http"
+
+	"golang.org/x/net/context"
+)
 
 // RoundTripper is an interface representing the ability to execute a
 // single HTTP transaction, obtaining the Response for a given Request.
@@ -28,5 +32,5 @@ type RoundTripper interface {
 	// consuming and closing the Body, including on errors. The
 	// request's URL and Header fields are guaranteed to be
 	// initialized.
-	RoundTrip(*http.Request) (*http.Response, error)
+	RoundTrip(context.Context, *http.Request) (*http.Response, error)
 }
