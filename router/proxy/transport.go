@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -16,6 +17,8 @@ import (
 )
 
 var (
+	ErrNoBackends = errors.New("router: no backends available")
+
 	httpTransport = &http.Transport{
 		Dial:                customDial,
 		TLSHandshakeTimeout: 10 * time.Second, // unused, but safer to leave default in place
@@ -36,6 +39,41 @@ func (t *transport) UpdateBackends(backends []string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.backends = backends
+}
+
+func (t *transport) ConnectWebSocket(ctx context.Context, req *http.Request) (*http.Response, net.Conn, *bufio.ReadWriter, error) {
+	t.mu.RLock()
+	backends := make([]string, len(t.backends))
+	copy(backends, t.backends)
+	t.mu.RUnlock()
+
+	shuffle(backends)
+
+	conn, addr, err := dialTCP(backends)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	req.URL.Host = addr
+
+	bufrw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	if err := req.Write(bufrw); err != nil {
+		return nil, nil, nil, err
+	}
+
+	res, err := http.ReadResponse(bufrw.Reader, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return res, conn, bufrw, err
+}
+
+func dialTCP(addrs []string) (net.Conn, string, error) {
+	for _, addr := range addrs {
+		if conn, err := dialer.Dial("tcp", addr); err == nil {
+			return conn, addr, nil
+		}
+	}
+	return nil, "", ErrNoBackends
 }
 
 func (t *transport) RoundTripHTTP(ctx context.Context, req *http.Request) (*http.Response, error) {
@@ -62,7 +100,7 @@ func roundTripHTTP(backends []string, req *http.Request) (*http.Response, error)
 		}
 		// retry, maybe log a message about it
 	}
-	return nil, errors.New("router: no backends available")
+	return nil, ErrNoBackends
 }
 
 func shuffle(s []string) {
@@ -117,6 +155,42 @@ func (t *stickyTransport) RoundTripHTTP(ctx context.Context, req *http.Request) 
 	}
 
 	return res, nil
+}
+
+func (t *stickyTransport) ConnectWebSocket(ctx context.Context, req *http.Request) (*http.Response, net.Conn, *bufio.ReadWriter, error) {
+	t.mu.RLock()
+	backends := make([]string, len(t.backends))
+	copy(backends, t.backends)
+	t.mu.RUnlock()
+
+	shuffle(backends)
+
+	stickyBackend := t.getStickyCookieBackend(req)
+	if stickyBackend != "" {
+		swapToFront(backends, stickyBackend)
+	}
+
+	conn, addr, err := dialTCP(backends)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	req.URL.Host = addr
+
+	bufrw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	if err := req.Write(bufrw); err != nil {
+		return nil, nil, nil, err
+	}
+
+	res, err := http.ReadResponse(bufrw.Reader, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if webSocketHandshakeSuccess(res) && stickyBackend != res.Request.URL.Host {
+		t.setStickyCookieBackend(res, stickyBackend)
+	}
+
+	return res, conn, bufrw, err
 }
 
 func (t *stickyTransport) getStickyCookieBackend(req *http.Request) string {

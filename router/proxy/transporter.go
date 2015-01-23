@@ -7,6 +7,8 @@
 package proxy
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 
 	"golang.org/x/net/context"
@@ -34,4 +36,10 @@ type Transporter interface {
 	// request's URL and Header fields are guaranteed to be
 	// initialized.
 	RoundTripHTTP(context.Context, *http.Request) (*http.Response, error)
+
+	// ConnectWebSocket executes the WebSocket protocol handshake, and readies
+	// the connection for WebSocket traffic. On a successful handshake, the
+	// http response from the backend is returned along with a bufio ReadWriter
+	// encapsulating the connection to the backend.
+	ConnectWebSocket(context.Context, *http.Request) (*http.Response, net.Conn, *bufio.ReadWriter, error)
 }
