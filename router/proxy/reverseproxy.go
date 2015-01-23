@@ -102,7 +102,11 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 	}
 	defer res.Body.Close()
 
-	for _, h := range httpHopHeaders {
+	p.writeResponse(rw, res, httpHopHeaders)
+}
+
+func (p *ReverseProxy) writeResponse(rw http.ResponseWriter, res *http.Response, hopHeaders []string) {
+	for _, h := range hopHeaders {
 		res.Header.Del(h)
 	}
 
