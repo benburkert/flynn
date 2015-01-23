@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 // onExitFlushLoop is a callback set by tests to detect the state of the
@@ -28,13 +30,13 @@ type ReverseProxy struct {
 	// the request into a new request to be sent
 	// using Transport. Its response is then copied
 	// back to the original client unmodified.
-	RequestDirector func(*http.Request)
+	RequestDirector func(context.Context, *http.Request)
 
 	// ResponseDirector must be a function which modifies
 	// the response before the response is copied to the
 	// ResponseWriter but after the hop headers have been
 	// stripped.
-	ResponseDirector func(*http.Response)
+	ResponseDirector func(context.Context, *http.Response)
 
 	// The transport used to perform proxy requests.
 	// If nil, http.DefaultTransport is used.
@@ -86,7 +88,7 @@ var hopHeaders = []string{
 	"Upgrade",
 }
 
-func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, req *http.Request) {
 	transport := p.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
@@ -95,7 +97,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	outreq := new(http.Request)
 	*outreq = *req // includes shallow copies of maps, but okay
 
-	p.RequestDirector(outreq)
+	p.RequestDirector(ctx, outreq)
 	outreq.Proto = "HTTP/1.1"
 	outreq.ProtoMajor = 1
 	outreq.ProtoMinor = 1
@@ -140,7 +142,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		res.Header.Del(h)
 	}
 
-	p.ResponseDirector(res)
+	p.ResponseDirector(ctx, res)
 
 	copyHeader(rw.Header(), res.Header)
 
