@@ -90,11 +90,8 @@ type stickyTransport struct {
 	cookieKey [32]byte
 }
 
-type key int
-
 const (
-	stickyCookie     = "_backend"
-	backendKey   key = 0
+	stickyCookie = "_backend"
 )
 
 func (t *stickyTransport) RoundTripHTTP(ctx context.Context, req *http.Request) (*http.Response, error) {
