@@ -24,11 +24,17 @@ var onExitFlushLoop func()
 // sends it to another server, proxying the response back to the
 // client.
 type ReverseProxy struct {
-	// Director must be a function which modifies
+	// RequestDirector must be a function which modifies
 	// the request into a new request to be sent
 	// using Transport. Its response is then copied
 	// back to the original client unmodified.
-	Director func(*http.Request)
+	RequestDirector func(*http.Request)
+
+	// ResponseDirector must be a function which modifies
+	// the response before the response is copied to the
+	// ResponseWriter but after the hop headers have been
+	// stripped.
+	ResponseDirector func(*http.Response)
 
 	// The transport used to perform proxy requests.
 	// If nil, http.DefaultTransport is used.
@@ -89,7 +95,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	outreq := new(http.Request)
 	*outreq = *req // includes shallow copies of maps, but okay
 
-	p.Director(outreq)
+	p.RequestDirector(outreq)
 	outreq.Proto = "HTTP/1.1"
 	outreq.ProtoMajor = 1
 	outreq.ProtoMinor = 1
@@ -133,6 +139,8 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	for _, h := range hopHeaders {
 		res.Header.Del(h)
 	}
+
+	p.ResponseDirector(res)
 
 	copyHeader(rw.Header(), res.Header)
 
