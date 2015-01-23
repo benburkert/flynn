@@ -160,8 +160,21 @@ func splice(a, b *bufio.ReadWriter) {
 	go cp(a, b)
 	go cp(b, a)
 
-	<-errc
-	<-errc
+	timer := time.NewTimer(time.Second)
+	for {
+		select {
+		case <-errc:
+			<-errc
+			return
+		case <-timer.C:
+			erra, errb := a.Flush(), b.Flush()
+			if erra != nil || errb != nil {
+				panic("flush error during splice")
+			}
+		}
+
+		timer.Reset(time.Second)
+	}
 }
 
 func (p *ReverseProxy) writeResponse(rw http.ResponseWriter, res *http.Response, hopHeaders []string) {

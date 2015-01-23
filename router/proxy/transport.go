@@ -59,6 +59,9 @@ func (t *transport) ConnectWebSocket(ctx context.Context, req *http.Request) (*h
 	if err := req.Write(bufrw); err != nil {
 		return nil, nil, nil, err
 	}
+	if err := bufrw.Flush(); err != nil {
+		return nil, nil, nil, err
+	}
 
 	res, err := http.ReadResponse(bufrw.Reader, req)
 	if err != nil {
