@@ -96,6 +96,11 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 	outreq := prepRequest(req, httpHopHeaders)
 
 	res, err := transport.RoundTripHTTP(ctx, outreq)
+	if err == ErrNoBackends {
+		rw.WriteHeader(http.StatusServiceUnavailable)
+		rw.Write([]byte("Service Unavailable\n"))
+		return
+	}
 	if err != nil {
 		p.logf("http: proxy error: %v", err)
 		rw.WriteHeader(http.StatusInternalServerError)
@@ -115,6 +120,11 @@ func (p *ReverseProxy) ServeWebSocket(ctx context.Context, rw http.ResponseWrite
 	outreq := prepRequest(req, wsHopHeaders)
 
 	res, uconn, ubufrw, err := transport.ConnectWebSocket(ctx, outreq)
+	if err == ErrNoBackends {
+		rw.WriteHeader(http.StatusServiceUnavailable)
+		rw.Write([]byte("Service Unavailable\n"))
+		return
+	}
 	if err != nil {
 		p.logf("ws: proxy error: %v", err)
 		rw.WriteHeader(http.StatusInternalServerError)
