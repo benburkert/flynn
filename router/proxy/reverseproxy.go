@@ -92,31 +92,7 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 		panic("router: nil transport for proxy")
 	}
 
-	outreq := new(http.Request)
-	*outreq = *req // includes shallow copies of maps, but okay
-
-	outreq.URL.Scheme = "http"
-	outreq.Proto = "HTTP/1.1"
-	outreq.ProtoMajor = 1
-	outreq.ProtoMinor = 1
-	outreq.Close = false
-
-	// Remove hop-by-hop headers to the backend.  Especially
-	// important is "Connection" because we want a persistent
-	// connection, regardless of what the client sent to us.  This
-	// is modifying the same underlying map from req (shallow
-	// copied above) so we only copy it if necessary.
-	copiedHeaders := false
-	for _, h := range httpHopHeaders {
-		if outreq.Header.Get(h) != "" {
-			if !copiedHeaders {
-				outreq.Header = make(http.Header)
-				copyHeader(outreq.Header, req.Header)
-				copiedHeaders = true
-			}
-			outreq.Header.Del(h)
-		}
-	}
+	outreq := prepRequest(req, httpHopHeaders)
 
 	res, err := transport.RoundTripHTTP(ctx, outreq)
 	if err != nil {
@@ -134,6 +110,36 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 
 	rw.WriteHeader(res.StatusCode)
 	p.copyResponse(rw, res.Body)
+}
+
+func prepRequest(req *http.Request, hopHeaders []string) *http.Request {
+	outreq := new(http.Request)
+	*outreq = *req // includes shallow copies of maps, but okay
+
+	outreq.URL.Scheme = "http"
+	outreq.Proto = "HTTP/1.1"
+	outreq.ProtoMajor = 1
+	outreq.ProtoMinor = 1
+	outreq.Close = false
+
+	// Remove hop-by-hop headers to the backend.  Especially
+	// important is "Connection" because we want a persistent
+	// connection, regardless of what the client sent to us.  This
+	// is modifying the same underlying map from req (shallow
+	// copied above) so we only copy it if necessary.
+	copiedHeaders := false
+	for _, h := range hopHeaders {
+		if outreq.Header.Get(h) != "" {
+			if !copiedHeaders {
+				outreq.Header = make(http.Header)
+				copyHeader(outreq.Header, req.Header)
+				copiedHeaders = true
+			}
+			outreq.Header.Del(h)
+		}
+	}
+
+	return outreq
 }
 
 func (p *ReverseProxy) copyResponse(dst io.Writer, src io.Reader) {
