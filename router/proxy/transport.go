@@ -98,7 +98,7 @@ func roundTripHTTP(backends []string, req *http.Request) (*http.Response, error)
 		if err == nil {
 			return res, nil
 		}
-		if _, ok := err.(*dialErr); !ok {
+		if _, ok := err.(dialErr); !ok {
 			return nil, err
 		}
 		// retry, maybe log a message about it
@@ -181,6 +181,9 @@ func (t *stickyTransport) ConnectWebSocket(ctx context.Context, req *http.Reques
 
 	bufrw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 	if err := req.Write(bufrw); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := bufrw.Flush(); err != nil {
 		return nil, nil, nil, err
 	}
 
