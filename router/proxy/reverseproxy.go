@@ -40,7 +40,7 @@ type ReverseProxy struct {
 
 	// The transport used to perform proxy requests.
 	// If nil, http.DefaultTransport is used.
-	Transport http.RoundTripper
+	Transport RoundTripper
 
 	// FlushInterval specifies the flush interval
 	// to flush to the client while copying the
@@ -91,7 +91,7 @@ var hopHeaders = []string{
 func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, req *http.Request) {
 	transport := p.Transport
 	if transport == nil {
-		transport = http.DefaultTransport
+		panic("router: nil transport for proxy")
 	}
 
 	outreq := new(http.Request)
@@ -130,7 +130,7 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 		outreq.Header.Set("X-Forwarded-For", clientIP)
 	}
 
-	res, err := transport.RoundTrip(outreq)
+	res, err := transport.RoundTrip(ctx, outreq)
 	if err != nil {
 		p.logf("http: proxy error: %v", err)
 		rw.WriteHeader(http.StatusInternalServerError)
