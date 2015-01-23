@@ -8,6 +8,7 @@ import (
 
 type Proxy interface {
 	ServeHTTP(context.Context, http.ResponseWriter, *http.Request)
+	ServeWebSocket(context.Context, http.ResponseWriter, *http.Request)
 	UpdateBackends([]string)
 }
 
