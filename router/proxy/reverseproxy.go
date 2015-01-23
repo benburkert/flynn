@@ -7,6 +7,7 @@
 package proxy
 
 import (
+	"bufio"
 	"io"
 	"log"
 	"net/http"
@@ -103,6 +104,64 @@ func (p *ReverseProxy) ServeHTTP(ctx context.Context, rw http.ResponseWriter, re
 	defer res.Body.Close()
 
 	p.writeResponse(rw, res, httpHopHeaders)
+}
+
+func (p *ReverseProxy) ServeWebSocket(ctx context.Context, rw http.ResponseWriter, req *http.Request) {
+	transport := p.Transport
+	if transport == nil {
+		panic("router: nil transport for proxy")
+	}
+
+	outreq := prepRequest(req, wsHopHeaders)
+
+	res, uconn, ubufrw, err := transport.ConnectWebSocket(ctx, outreq)
+	if err != nil {
+		p.logf("ws: proxy error: %v", err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer uconn.Close()
+
+	if !webSocketHandshakeSuccess(res) {
+		// Handshake was not successful, not going to reuse this connection.
+		rw.Header().Set("Connection", "close")
+
+		p.writeResponse(rw, res, wsHopHeaders)
+		res.Body.Close()
+
+		return
+	}
+
+	p.writeResponse(rw, res, wsHopHeaders)
+	res.Body.Close()
+
+	hj, ok := rw.(http.Hijacker)
+	if !ok {
+		p.logf("ws: hijack failed")
+		return
+	}
+	dconn, dbufrw, err := hj.Hijack()
+	if err != nil {
+		p.logf("ws: hijack failed: %v", err)
+		return
+	}
+	defer dconn.Close()
+
+	splice(ubufrw, dbufrw)
+}
+
+func splice(a, b *bufio.ReadWriter) {
+	errc := make(chan error, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		_, err := io.Copy(dst, src)
+		errc <- err
+	}
+
+	go cp(a, b)
+	go cp(b, a)
+
+	<-errc
+	<-errc
 }
 
 func (p *ReverseProxy) writeResponse(rw http.ResponseWriter, res *http.Response, hopHeaders []string) {
