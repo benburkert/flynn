@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/kavu/go_reuseport"
+
 	"github.com/flynn/flynn/router/proxy"
 	"github.com/flynn/flynn/router/types"
 )

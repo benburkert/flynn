@@ -92,7 +92,7 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		p.logf("router: proxy error: %v", err)
 		rw.WriteHeader(http.StatusServiceUnavailable)
-		rw.Write([]byte(http.StatusText(http.StatusServiceUnavailable)))
+		rw.Write(serviceUnavailable)
 		return
 	}
 	defer res.Body.Close()
