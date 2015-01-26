@@ -86,6 +86,13 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, errNoBackends
 }
 
+func (t *transport) Connect(_ net.Addr) (net.Conn, error) {
+	backends := t.getBackends()
+	shuffle(backends)
+	conn, _, err := dialTCP(backends)
+	return conn, err
+}
+
 func (t *transport) UpgradeHTTP(req *http.Request) (*http.Response, net.Conn, error) {
 	stickyBackend := t.getStickyBackend(req)
 	backends := t.getOrderedBackends(stickyBackend)
@@ -109,10 +116,13 @@ func (t *transport) UpgradeHTTP(req *http.Request) (*http.Response, net.Conn, er
 	return res, conn, nil
 }
 
-func dialTCP(addrs []string) (net.Conn, string, error) {
+func dialTCP(addrs []string) (*net.TCPConn, string, error) {
 	for _, addr := range addrs {
 		if conn, err := dialer.Dial("tcp", addr); err == nil {
-			return conn, addr, nil
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				return tcpConn, addr, nil
+			}
+			panic("proxy: tcp dialer provided non-TCP connection")
 		}
 	}
 	return nil, "", errNoBackends
