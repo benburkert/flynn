@@ -107,7 +107,7 @@ func (p *ReverseProxy) ServeConn(conn net.Conn) {
 	}
 	defer conn.Close()
 
-	dconn, err := transport.ConnectStream(conn.RemoteAddr())
+	dconn, err := transport.Connect(conn.RemoteAddr())
 	if err != nil {
 		panic(err)
 		p.logf("stream: proxy error: %v", err)
