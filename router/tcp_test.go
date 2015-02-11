@@ -52,7 +52,7 @@ func (s *S) newTCPListener(t etcdrunner.TestingT) *TCPListener {
 		IP:        "127.0.0.1",
 		startPort: firstTCPPort,
 		endPort:   lastTCPPort,
-		ds:        NewPostgresDataStore("tcp", s.pgx),
+		ds:        NewPostgresDataStore(router.TCP, s.pgx),
 		discoverd: s.discoverd,
 	}
 	if err := l.Start(); err != nil {

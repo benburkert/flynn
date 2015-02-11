@@ -36,7 +36,7 @@ type SyncHandler interface {
 type pgDataStore struct {
 	pgx *pgx.ConnPool
 
-	routeType string
+	routeType router.RouteType
 	tableName string
 
 	doneo sync.Once
@@ -46,16 +46,8 @@ type pgDataStore struct {
 // NewPostgresDataStore returns a DataStore that stores route information in a
 // Postgres database. It uses pg_notify and a listener connection to watch for
 // route changes.
-func NewPostgresDataStore(routeType string, pgx *pgx.ConnPool) *pgDataStore {
-	tableName := ""
-	switch routeType {
-	case "http":
-		tableName = "http_routes"
-	case "tcp":
-		tableName = "tcp_routes"
-	default:
-		panic(fmt.Sprintf("unknown routeType: %q", routeType))
-	}
+func NewPostgresDataStore(routeType router.RouteType, pgx *pgx.ConnPool) *pgDataStore {
+	tableName := routeType.String() + "_routes"
 	return &pgDataStore{
 		pgx:       pgx,
 		routeType: routeType,
@@ -75,8 +67,8 @@ INSERT INTO %s (parent_ref, service, port)
 	RETURNING id, created_at, updated_at`
 
 func (d *pgDataStore) Add(r *router.Route) (err error) {
-	switch d.tableName {
-	case "http_routes":
+	switch d.routeType {
+	case router.HTTP:
 		err = d.pgx.QueryRow(
 			fmt.Sprintf(sqlAddRouteHTTP, d.tableName),
 			r.ParentRef,
@@ -86,7 +78,7 @@ func (d *pgDataStore) Add(r *router.Route) (err error) {
 			r.TLSKey,
 			r.Sticky,
 		).Scan(&r.ID, &r.CreatedAt, &r.UpdatedAt)
-	case "tcp_routes":
+	case router.TCP:
 		err = d.pgx.QueryRow(
 			fmt.Sprintf(sqlAddRouteTCP, d.tableName),
 			r.ParentRef,
@@ -111,8 +103,8 @@ UPDATE %s SET parent_ref = $1, service = $2
 func (d *pgDataStore) Update(r *router.Route) error {
 	var row *pgx.Row
 
-	switch d.tableName {
-	case "http_routes":
+	switch d.routeType {
+	case router.HTTP:
 		row = d.pgx.QueryRow(
 			fmt.Sprintf(sqlUpdateRouteHTTP, d.tableName, d.columnNames()),
 			r.ParentRef,
@@ -123,7 +115,7 @@ func (d *pgDataStore) Update(r *router.Route) error {
 			r.ID,
 			r.Domain,
 		)
-	case "tcp_routes":
+	case router.TCP:
 		row = d.pgx.QueryRow(
 			fmt.Sprintf(sqlUpdateRouteTCP, d.tableName, d.columnNames()),
 			r.ParentRef,
@@ -294,9 +286,9 @@ const (
 
 func (d *pgDataStore) columnNames() string {
 	switch d.routeType {
-	case "http":
+	case router.HTTP:
 		return selectColumnsHTTP
-	case "tcp":
+	case router.TCP:
 		return selectColumnsTCP
 	default:
 		panic(fmt.Sprintf("unknown routeType: %q", d.routeType))
@@ -309,8 +301,8 @@ type scannable interface {
 
 func (d *pgDataStore) scanRoute(route *router.Route, s scannable) error {
 	route.Type = d.routeType
-	switch d.tableName {
-	case "http_routes":
+	switch d.routeType {
+	case router.HTTP:
 		return s.Scan(
 			&route.ID,
 			&route.ParentRef,
@@ -322,7 +314,7 @@ func (d *pgDataStore) scanRoute(route *router.Route, s scannable) error {
 			&route.CreatedAt,
 			&route.UpdatedAt,
 		)
-	case "tcp_routes":
+	case router.TCP:
 		return s.Scan(
 			&route.ID,
 			&route.ParentRef,

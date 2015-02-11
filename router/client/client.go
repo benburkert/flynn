@@ -67,7 +67,7 @@ func (c *client) CreateRoute(r *router.Route) error {
 }
 
 func (c *client) UpdateRoute(r *router.Route) error {
-	return c.Put("/routes/"+r.Type+"/"+r.ID, r, r)
+	return c.Put(fmt.Sprintf("/routes/%s/%s", r.Type, r.ID), r, r)
 }
 
 func (c *client) DeleteRoute(routeType, id string) error {

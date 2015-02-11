@@ -76,9 +76,9 @@ func (e *generator) listRoutes() {
 }
 
 func (e *generator) getRoute() {
-	e.client.GetRoute(e.route.Type, e.route.ID)
+	e.client.GetRoute(e.route.Type.String(), e.route.ID)
 }
 
 func (e *generator) deleteRoute() {
-	e.client.DeleteRoute(e.route.Type, e.route.ID)
+	e.client.DeleteRoute(e.route.Type.String(), e.route.ID)
 }

@@ -47,11 +47,16 @@ func createRoute(req *http.Request, route router.Route, router *Router, r render
 	r.JSON(200, route)
 }
 
-func updateRoute(params martini.Params, route router.Route, router *Router, r render.Render) {
-	route.Type = params["route_type"]
+func updateRoute(params martini.Params, route router.Route, rtr *Router, r render.Render) {
 	route.ID = params["id"]
 
-	l := listenerFor(router, route.Type)
+	rt, err := router.RouteTypeAtoi(params["route_type"])
+	if err != nil {
+		r.JSON(400, "Invalid route type")
+	}
+	route.Type = rt
+
+	l := listenerFor(rtr, route.Type)
 	if l == nil {
 		r.JSON(400, "Invalid route type")
 		return
@@ -65,12 +70,12 @@ func updateRoute(params martini.Params, route router.Route, router *Router, r re
 	r.JSON(200, route)
 }
 
-func listenerFor(router *Router, typ string) Listener {
-	switch typ {
-	case "http":
-		return router.HTTP
-	case "tcp":
-		return router.TCP
+func listenerFor(rtr *Router, routeType router.RouteType) Listener {
+	switch routeType {
+	case router.HTTP:
+		return rtr.HTTP
+	case router.TCP:
+		return rtr.TCP
 	default:
 		return nil
 	}
@@ -111,8 +116,13 @@ func getRoutes(req *http.Request, rtr *Router, r render.Render) {
 	r.JSON(200, routes)
 }
 
-func getRoute(params martini.Params, router *Router, r render.Render) {
-	l := listenerFor(router, params["route_type"])
+func getRoute(params martini.Params, rtr *Router, r render.Render) {
+	routeType, err := router.RouteTypeAtoi(params["route_type"])
+	if err != nil {
+		r.JSON(400, "Invalid route type")
+	}
+
+	l := listenerFor(rtr, routeType)
 	if l == nil {
 		r.JSON(404, "not found")
 		return
@@ -132,14 +142,19 @@ func getRoute(params martini.Params, router *Router, r render.Render) {
 	r.JSON(200, route)
 }
 
-func deleteRoute(params martini.Params, router *Router, r render.Render) {
-	l := listenerFor(router, params["route_type"])
+func deleteRoute(params martini.Params, rtr *Router, r render.Render) {
+	routeType, err := router.RouteTypeAtoi(params["route_type"])
+	if err != nil {
+		r.JSON(400, "Invalid route type")
+	}
+
+	l := listenerFor(rtr, routeType)
 	if l == nil {
 		r.JSON(404, "not found")
 		return
 	}
 
-	err := l.RemoveRoute(params["id"])
+	err = l.RemoveRoute(params["id"])
 	if err == ErrNotFound {
 		r.JSON(404, "not found")
 		return

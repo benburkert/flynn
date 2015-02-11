@@ -1,15 +1,45 @@
 package router
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
+
+type RouteType int
+
+const (
+	HTTP RouteType = 0 + iota
+	TCP
+)
+
+func RouteTypeAtoi(s string) (RouteType, error) {
+	switch s {
+	case "http":
+		return HTTP, nil
+	case "tcp":
+		return TCP, nil
+	default:
+		return RouteType(-1), errors.New("invalid route type")
+	}
+}
+
+func (t RouteType) String() string {
+	switch t {
+	case HTTP:
+		return "http"
+	case TCP:
+		return "tcp"
+	default:
+		return ""
+	}
+}
 
 // Route is a struct that combines the fields of HTTPRoute and TCPRoute
 // for easy JSON marshaling.
 type Route struct {
 	// Type is the type of Route, either "http" or "tcp".
-	Type string `json:"type"`
+	Type RouteType `json:"type"`
 	// ID is the unique ID of this route.
 	ID string `json:"id,omitempty"`
 	// ParentRef is an external opaque identifier used by the route creator for
@@ -67,9 +97,9 @@ func (r Route) TCPRoute() *TCPRoute {
 
 func (r Route) routeForDB() interface{} {
 	switch r.Type {
-	case "http":
+	case HTTP:
 		return r.HTTPRoute()
-	case "tcp":
+	case TCP:
 		return r.TCPRoute()
 	default:
 		panic(fmt.Sprintf("unknown table name: %q", r.Type))
@@ -95,7 +125,7 @@ type HTTPRoute struct {
 func (r HTTPRoute) ToRoute() *Route {
 	return &Route{
 		// common fields
-		Type:      "http",
+		Type:      HTTP,
 		ID:        r.ID,
 		ParentRef: r.ParentRef,
 		Service:   r.Service,
@@ -125,7 +155,7 @@ type TCPRoute struct {
 
 func (r TCPRoute) ToRoute() *Route {
 	return &Route{
-		Type:      "tcp",
+		Type:      TCP,
 		ID:        r.ID,
 		ParentRef: r.ParentRef,
 		Service:   r.Service,

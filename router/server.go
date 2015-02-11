@@ -121,7 +121,7 @@ func main() {
 			IP:        *tcpIP,
 			startPort: *tcpRangeStart,
 			endPort:   *tcpRangeEnd,
-			ds:        NewPostgresDataStore("tcp", pgxpool),
+			ds:        NewPostgresDataStore(router.TCP, pgxpool),
 			discoverd: discoverd.DefaultClient,
 		},
 		HTTP: &HTTPListener{
@@ -129,7 +129,7 @@ func main() {
 			TLSAddr:   *httpsAddr,
 			cookieKey: cookieKey,
 			keypair:   keypair,
-			ds:        NewPostgresDataStore("http", pgxpool),
+			ds:        NewPostgresDataStore(router.HTTP, pgxpool),
 			discoverd: discoverd.DefaultClient,
 		},
 	}

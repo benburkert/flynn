@@ -80,7 +80,7 @@ func (s *S) newHTTPListener(t etcdrunner.TestingT) *HTTPListener {
 		Addr:      "127.0.0.1:0",
 		TLSAddr:   "127.0.0.1:0",
 		keypair:   pair,
-		ds:        NewPostgresDataStore("http", s.pgx),
+		ds:        NewPostgresDataStore(router.HTTP, s.pgx),
 		discoverd: s.discoverd,
 	}
 	if err := l.Start(); err != nil {
