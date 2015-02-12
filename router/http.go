@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -37,6 +38,7 @@ type HTTPListener struct {
 	discoverd DiscoverdClient
 	ds        DataStore
 	wm        *WatchManager
+	stopSync  func()
 
 	listener    net.Listener
 	tlsListener net.Listener
@@ -52,17 +54,20 @@ type DiscoverdClient interface {
 func (s *HTTPListener) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
+	s.stopSync()
 	for _, service := range s.services {
 		service.sc.Close()
 	}
 	s.listener.Close()
 	s.tlsListener.Close()
-	s.ds.StopSync()
 	s.closed = true
 	return nil
 }
 
 func (s *HTTPListener) Start() error {
+	ctx := context.Background() // TODO(benburkert): make this an argument
+	ctx, s.stopSync = context.WithCancel(ctx)
+
 	if s.Watcher != nil {
 		return errors.New("router: http listener already started")
 	}
@@ -84,23 +89,57 @@ func (s *HTTPListener) Start() error {
 		s.cookieKey = &[32]byte{}
 	}
 
-	started := make(chan error)
-
 	// TODO(benburkert): the sync API cannot handle routes deleted while the
 	// listen/notify connection is disconnected
-	go s.ds.Sync(&httpSyncHandler{l: s}, started)
-	if err := <-started; err != nil {
+	if err := s.startSync(ctx); err != nil {
 		return err
 	}
 
+	if err := s.startListen(); err != nil {
+		s.stopSync()
+		return err
+	}
+
+	return nil
+}
+
+func (s *HTTPListener) startSync(ctx context.Context) error {
+	startc, errc := make(chan struct{}), make(chan error)
+
+	go func() { errc <- s.ds.Sync(ctx, &httpSyncHandler{l: s}, startc) }()
+
+	select {
+	case err := <-errc:
+		return err
+	case <-startc:
+		go s.runSync(ctx, errc)
+		return nil
+	}
+}
+
+func (s *HTTPListener) runSync(ctx context.Context, errc chan error) {
+	err := <-errc
+
+	for {
+		if err == nil {
+			return
+		}
+		log.Printf("router: sync error: %s", err)
+
+		startc := make(chan struct{})
+		go func() { errc <- s.ds.Sync(ctx, &httpSyncHandler{l: s}, startc) }()
+
+		err = <-errc
+	}
+}
+
+func (s *HTTPListener) startListen() error {
 	if err := s.listenAndServe(); err != nil {
-		s.ds.StopSync()
 		return err
 	}
 	s.Addr = s.listener.Addr().String()
 
 	if err := s.listenAndServeTLS(); err != nil {
-		s.ds.StopSync()
 		s.listener.Close()
 		return err
 	}
