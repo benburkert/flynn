@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -30,10 +29,8 @@ type HTTPListener struct {
 	Addr    string
 	TLSAddr string
 
-	mtx      sync.RWMutex
-	domains  map[string]*httpRoute
-	routes   map[string]*httpRoute
-	services map[string]*httpService
+	mtx        sync.Mutex
+	routeTable *httpRouteTable
 
 	discoverd DiscoverdClient
 	ds        DataStore
@@ -55,9 +52,7 @@ func (s *HTTPListener) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	s.stopSync()
-	for _, service := range s.services {
-		service.sc.Close()
-	}
+	s.routeTable.Close()
 	s.listener.Close()
 	s.tlsListener.Close()
 	s.closed = true
@@ -81,16 +76,19 @@ func (s *HTTPListener) Start() error {
 	}
 	s.DataStoreReader = s.ds
 
-	s.routes = make(map[string]*httpRoute)
-	s.domains = make(map[string]*httpRoute)
-	s.services = make(map[string]*httpService)
-
 	if s.cookieKey == nil {
 		s.cookieKey = &[32]byte{}
 	}
 
-	// TODO(benburkert): the sync API cannot handle routes deleted while the
-	// listen/notify connection is disconnected
+	s.routeTable = &httpRouteTable{
+		routes:    make(map[string]*httpRoute),
+		domains:   make(map[string]*httpRoute),
+		services:  make(map[string]*httpService),
+		discoverd: s.discoverd,
+		wm:        s.wm,
+		cookieKey: s.cookieKey,
+	}
+
 	if err := s.startSync(ctx); err != nil {
 		return err
 	}
@@ -106,7 +104,7 @@ func (s *HTTPListener) Start() error {
 func (s *HTTPListener) startSync(ctx context.Context) error {
 	startc, errc := make(chan struct{}), make(chan error)
 
-	go func() { errc <- s.ds.Sync(ctx, &httpSyncHandler{l: s}, startc) }()
+	go func() { errc <- s.ds.Sync(ctx, s.routeTable, startc) }()
 
 	select {
 	case err := <-errc:
@@ -126,10 +124,31 @@ func (s *HTTPListener) runSync(ctx context.Context, errc chan error) {
 		}
 		log.Printf("router: sync error: %s", err)
 
+		rt := &httpRouteTable{
+			routes:    make(map[string]*httpRoute),
+			domains:   make(map[string]*httpRoute),
+			services:  make(map[string]*httpService),
+			discoverd: s.discoverd,
+			wm:        s.wm,
+		}
+		for k, v := range s.routeTable.services {
+			rt.services[k] = v
+		}
+
 		startc := make(chan struct{})
-		go func() { errc <- s.ds.Sync(ctx, &httpSyncHandler{l: s}, startc) }()
+		go func() { errc <- s.ds.Sync(ctx, rt, startc) }()
+
+		select {
+		case err = <-errc:
+			continue
+		case <-startc:
+			s.mtx.Lock()
+			s.routeTable = rt
+			s.mtx.Unlock()
+		}
 
 		err = <-errc
+
 	}
 }
 
@@ -151,8 +170,6 @@ func (s *HTTPListener) startListen() error {
 var ErrClosed = errors.New("router: listener has been closed")
 
 func (s *HTTPListener) AddRoute(r *router.Route) error {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
 	if s.closed {
 		return ErrClosed
 	}
@@ -160,8 +177,6 @@ func (s *HTTPListener) AddRoute(r *router.Route) error {
 }
 
 func (s *HTTPListener) UpdateRoute(r *router.Route) error {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
 	if s.closed {
 		return ErrClosed
 	}
@@ -174,89 +189,10 @@ func md5sum(data string) string {
 }
 
 func (s *HTTPListener) RemoveRoute(id string) error {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
 	if s.closed {
 		return ErrClosed
 	}
 	return s.ds.Remove(id)
-}
-
-type httpSyncHandler struct {
-	l *HTTPListener
-}
-
-func (h *httpSyncHandler) Set(data *router.Route) error {
-	route := data.HTTPRoute()
-	r := &httpRoute{HTTPRoute: route}
-
-	if r.TLSCert != "" && r.TLSKey != "" {
-		kp, err := tls.X509KeyPair([]byte(r.TLSCert), []byte(r.TLSKey))
-		if err != nil {
-			return err
-		}
-		r.keypair = &kp
-		r.TLSCert = ""
-		r.TLSKey = ""
-	}
-
-	h.l.mtx.Lock()
-	defer h.l.mtx.Unlock()
-	if h.l.closed {
-		return nil
-	}
-
-	service := h.l.services[r.Service]
-	if service != nil && service.name != r.Service {
-		service.refs--
-		if service.refs <= 0 {
-			service.sc.Close()
-			delete(h.l.services, service.name)
-		}
-		service = nil
-	}
-	if service == nil {
-		sc, err := NewDiscoverdServiceCache(h.l.discoverd.Service(r.Service))
-		if err != nil {
-			return err
-		}
-		service = &httpService{
-			name: r.Service,
-			sc:   sc,
-			rp:   proxy.NewReverseProxy(sc.Addrs, h.l.cookieKey, r.Sticky),
-		}
-		h.l.services[r.Service] = service
-	}
-	service.refs++
-	r.service = service
-	h.l.routes[data.ID] = r
-	h.l.domains[strings.ToLower(r.Domain)] = r
-
-	go h.l.wm.Send(&router.Event{Event: "set", ID: r.Domain})
-	return nil
-}
-
-func (h *httpSyncHandler) Remove(id string) error {
-	h.l.mtx.Lock()
-	defer h.l.mtx.Unlock()
-	if h.l.closed {
-		return nil
-	}
-	r, ok := h.l.routes[id]
-	if !ok {
-		return ErrNotFound
-	}
-
-	r.service.refs--
-	if r.service.refs <= 0 {
-		r.service.sc.Close()
-		delete(h.l.services, r.service.name)
-	}
-
-	delete(h.l.routes, id)
-	delete(h.l.domains, r.Domain)
-	go h.l.wm.Send(&router.Event{Event: "remove", ID: id})
-	return nil
 }
 
 func (s *HTTPListener) listenAndServe() error {
@@ -316,24 +252,11 @@ func (s *HTTPListener) listenAndServeTLS() error {
 }
 
 func (s *HTTPListener) findRouteForHost(host string) *httpRoute {
-	host = strings.ToLower(host)
-	if strings.Contains(host, ":") {
-		host, _, _ = net.SplitHostPort(host)
-	}
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
-	if backend, ok := s.domains[host]; ok {
-		return backend
-	}
-	// handle wildcard domains up to 5 subdomains deep, from most-specific to
-	// least-specific
-	d := strings.SplitN(host, ".", 5)
-	for i := len(d); i > 0; i-- {
-		if backend, ok := s.domains["*."+strings.Join(d[len(d)-i:], ".")]; ok {
-			return backend
-		}
-	}
-	return nil
+	s.mtx.Lock()
+	rt := s.routeTable
+	s.mtx.Unlock()
+
+	return rt.Lookup(host)
 }
 
 func failAndClose(w http.ResponseWriter, code int) {
