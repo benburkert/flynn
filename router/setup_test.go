@@ -154,7 +154,10 @@ func discoverdRegisterHTTP(c *C, l *HTTPListener, addr string) func() {
 
 func discoverdRegisterHTTPService(c *C, l *HTTPListener, name, addr string) func() {
 	dc := l.discoverd.(discoverdClient)
-	sc := l.services[name].sc
+	l.mtx.Lock()
+	rt := l.routeTable
+	l.mtx.Unlock()
+	sc := rt.services[name].sc
 	return discoverdRegister(c, dc, sc.(*discoverdServiceCache), name, addr)
 }
 
