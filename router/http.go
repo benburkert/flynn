@@ -29,7 +29,7 @@ type HTTPListener struct {
 	Addr    string
 	TLSAddr string
 
-	mtx        sync.Mutex
+	mtx        sync.RWMutex
 	routeTable *httpRouteTable
 
 	discoverd DiscoverdClient
@@ -80,14 +80,7 @@ func (s *HTTPListener) Start() error {
 		s.cookieKey = &[32]byte{}
 	}
 
-	s.routeTable = &httpRouteTable{
-		routes:    make(map[string]*httpRoute),
-		domains:   make(map[string]*httpRoute),
-		services:  make(map[string]*httpService),
-		discoverd: s.discoverd,
-		wm:        s.wm,
-		cookieKey: s.cookieKey,
-	}
+	s.routeTable = NewHTTPRouteTable(s.discoverd, s.cookieKey, s.wm)
 
 	if err := s.startSync(ctx); err != nil {
 		return err
@@ -103,7 +96,7 @@ func (s *HTTPListener) Start() error {
 
 func (s *HTTPListener) startSync(ctx context.Context) error {
 	errc := make(chan error)
-	startc := s.doSync(ctx, errc)
+	startc := s.doSync(ctx, s.routeTable, errc)
 
 	select {
 	case err := <-errc:
@@ -123,18 +116,8 @@ func (s *HTTPListener) runSync(ctx context.Context, errc chan error) {
 		}
 		log.Printf("router: sync error: %s", err)
 
-		rt := &httpRouteTable{
-			routes:    make(map[string]*httpRoute),
-			domains:   make(map[string]*httpRoute),
-			services:  make(map[string]*httpService),
-			discoverd: s.discoverd,
-			wm:        s.wm,
-		}
-		for k, v := range s.routeTable.services {
-			rt.services[k] = v
-		}
-
-		startc := s.doSync(ctx, errc)
+		rt := s.routeTable.Clone()
+		startc := s.doSync(ctx, rt, errc)
 
 		select {
 		case err = <-errc:
@@ -149,10 +132,10 @@ func (s *HTTPListener) runSync(ctx context.Context, errc chan error) {
 	}
 }
 
-func (s *HTTPListener) doSync(ctx context.Context, errc chan<- error) <-chan struct{} {
+func (s *HTTPListener) doSync(ctx context.Context, sh SyncHandler, errc chan<- error) <-chan struct{} {
 	startc := make(chan struct{})
 
-	go func() { errc <- s.ds.Sync(ctx, &httpSyncHandler{l: s}, startc) }()
+	go func() { errc <- s.ds.Sync(ctx, sh, startc) }()
 
 	return startc
 }
@@ -257,9 +240,9 @@ func (s *HTTPListener) listenAndServeTLS() error {
 }
 
 func (s *HTTPListener) findRouteForHost(host string) *httpRoute {
-	s.mtx.Lock()
+	s.mtx.RLock()
 	rt := s.routeTable
-	s.mtx.Unlock()
+	s.mtx.RUnlock()
 
 	return rt.Lookup(host)
 }

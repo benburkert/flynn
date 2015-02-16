@@ -26,6 +26,25 @@ type httpRouteTable struct {
 	wm        *WatchManager
 }
 
+func NewHTTPRouteTable(discoverd DiscoverdClient, cookieKey *[32]byte, wm *WatchManager) *httpRouteTable {
+	return &httpRouteTable{
+		routes:    make(map[string]*httpRoute),
+		domains:   make(map[string]*httpRoute),
+		services:  make(map[string]*httpService),
+		discoverd: discoverd,
+		cookieKey: cookieKey,
+		wm:        wm,
+	}
+}
+
+func (t *httpRouteTable) Clone() *httpRouteTable {
+	ct := NewHTTPRouteTable(t.discoverd, t.cookieKey, t.wm)
+	for k, v := range t.services {
+		ct.services[k] = v
+	}
+	return ct
+}
+
 func (t *httpRouteTable) Set(data *router.Route) error {
 	route := data.HTTPRoute()
 	r := &httpRoute{HTTPRoute: route}
