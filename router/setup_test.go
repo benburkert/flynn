@@ -13,6 +13,7 @@ import (
 	"github.com/flynn/flynn/discoverd/client"
 	"github.com/flynn/flynn/discoverd/testutil"
 	"github.com/flynn/flynn/discoverd/testutil/etcdrunner"
+	"github.com/flynn/flynn/pkg/postgres"
 	"github.com/flynn/flynn/pkg/testutils/postgres"
 	"github.com/flynn/flynn/router/types"
 )
@@ -66,7 +67,7 @@ func Test(t *testing.T) { TestingT(t) }
 type S struct {
 	discoverd *discoverdWrapper
 	cleanup   func()
-	pgx       *pgx.ConnPool
+	pgx       *postgres.SimConnPool
 }
 
 var _ = Suite(&S{})
@@ -88,7 +89,7 @@ func (s *S) SetUpSuite(c *C) {
 		c.Fatal(err)
 	}
 	db.Close()
-	pgxpool, err := pgx.NewConnPool(pgx.ConnPoolConfig{
+	pgxpool, err := postgres.NewSimConnPool(pgx.ConnPoolConfig{
 		ConnConfig: pgx.ConnConfig{
 			Host:     os.Getenv("PGHOST"),
 			Database: dbname,

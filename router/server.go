@@ -102,7 +102,7 @@ func main() {
 		}
 	}
 
-	pgxpool, err := pgx.NewConnPool(pgx.ConnPoolConfig{
+	pgxpool, err := postgres.NewConnPool(pgx.ConnPoolConfig{
 		ConnConfig: pgx.ConnConfig{
 			Host:     os.Getenv("PGHOST"),
 			Port:     uint16(pgport),

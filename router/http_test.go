@@ -1131,3 +1131,47 @@ func (s *S) TestHTTPHijackUpgrade(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(string(pong), Equals, "pong!\n")
 }
+
+// issue #1002
+func (s *S) TestHTTPSyncRemoveDuringConnErr(c *C) {
+	l := &HTTPListener{
+		ds:        NewPostgresDataStore("http", s.pgx),
+		discoverd: s.discoverd,
+	}
+
+	if err := l.Start(); err != nil {
+		c.Fatal(err)
+	}
+	defer l.Close()
+
+	r := addRoute(c, l, router.HTTPRoute{
+		Domain:  "example.com",
+		Service: "example-com",
+	}.ToRoute())
+
+	srv := httptest.NewServer(httpTestHandler(""))
+	discoverdRegisterHTTPService(c, l, "example-com", srv.Listener.Addr().String())
+
+	client := newHTTPClient("example.com")
+	req := newReq("http://"+l.Addr, "example.com")
+	res, err := client.Do(req)
+	c.Assert(err, IsNil)
+	defer res.Body.Close()
+
+	c.Assert(res.StatusCode, Equals, 200)
+
+	s.pgx.Drop()
+	l.RemoveRoute(r.ID)
+	s.pgx.Break()
+
+	addRoute(c, l, router.HTTPRoute{
+		Domain:  "example.org",
+		Service: "example-org",
+	}.ToRoute())
+
+	res, err = client.Do(req)
+	c.Assert(err, IsNil)
+	defer res.Body.Close()
+
+	c.Assert(res.StatusCode, Equals, 404)
+}

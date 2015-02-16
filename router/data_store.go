@@ -7,6 +7,7 @@ import (
 
 	"github.com/flynn/flynn/Godeps/_workspace/src/github.com/jackc/pgx"
 	"github.com/flynn/flynn/Godeps/_workspace/src/golang.org/x/net/context"
+	"github.com/flynn/flynn/pkg/postgres"
 	"github.com/flynn/flynn/router/types"
 )
 
@@ -32,7 +33,7 @@ type SyncHandler interface {
 }
 
 type pgDataStore struct {
-	pgx *pgx.ConnPool
+	pgx postgres.ConnPool
 
 	routeType string
 	tableName string
@@ -48,7 +49,7 @@ const (
 // NewPostgresDataStore returns a DataStore that stores route information in a
 // Postgres database. It uses pg_notify and a listener connection to watch for
 // route changes.
-func NewPostgresDataStore(routeType string, pgx *pgx.ConnPool) *pgDataStore {
+func NewPostgresDataStore(routeType string, pgx postgres.ConnPool) *pgDataStore {
 	tableName := ""
 	switch routeType {
 	case routeTypeHTTP:
@@ -334,7 +335,7 @@ func (d *pgDataStore) scanRoute(route *router.Route, s scannable) error {
 
 const sqlUnlisten = `UNLISTEN %s`
 
-func unlistenAndRelease(pool *pgx.ConnPool, conn *pgx.Conn, channel string) {
+func unlistenAndRelease(pool postgres.ConnPool, conn postgres.Conn, channel string) {
 	_, err := conn.Exec(fmt.Sprintf(sqlUnlisten, channel))
 	if err != nil {
 		conn.Close()
