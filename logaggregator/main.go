@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/flynn/flynn/logaggregator/rfc5424"
 	"github.com/flynn/flynn/pkg/shutdown"
 )
 
@@ -126,6 +127,12 @@ func (a *Aggregator) consumeLogs() {
 		// TODO: forward message to follower aggregator
 		// TODO: parse the message, send it to the right bucket
 		fmt.Printf("message received: %q\n", string(line))
+		msg, err := rfc5424.Parse(line)
+		if err != nil {
+			fmt.Println("ERROR PARSING:", err)
+			continue
+		}
+		fmt.Printf("MSG: %#v\n", msg)
 	}
 }
 
