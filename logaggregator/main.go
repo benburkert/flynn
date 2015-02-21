@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/flynn/flynn/logaggregator/rfc5424"
+	"github.com/flynn/flynn/logaggregator/ring"
 	"github.com/flynn/flynn/pkg/shutdown"
 )
 
@@ -38,13 +39,16 @@ type Aggregator struct {
 	// Addr is the address (host:port) to listen on for incoming syslog messages.
 	Addr string
 
+	bmu          sync.Mutex // protects buffers
+	buffers      map[string]*ring.Buffer
 	listener     net.Listener
 	logc         chan []byte
 	numConsumers int
 	consumerwg   sync.WaitGroup
+	filerwg      sync.WaitGroup
 	producerwg   sync.WaitGroup
 
-	mu       sync.Mutex // protects the following:
+	smu      sync.Mutex // protects the following:
 	shutdown chan struct{}
 	closed   bool
 }
@@ -53,6 +57,7 @@ type Aggregator struct {
 func NewAggregator(addr string) *Aggregator {
 	return &Aggregator{
 		Addr:         "127.0.0.1:0",
+		buffers:      make(map[string]*ring.Buffer),
 		logc:         make(chan []byte),
 		numConsumers: 10,
 		shutdown:     make(chan struct{}),
@@ -87,8 +92,8 @@ func (a *Aggregator) Start() error {
 // Shutdown shuts down the Aggregator gracefully by closing its listener,
 // and waiting for already-received logs to be processed.
 func (a *Aggregator) Shutdown() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.smu.Lock()
+	defer a.smu.Unlock()
 	if a.closed {
 		return
 	}
@@ -125,15 +130,25 @@ func (a *Aggregator) accept() {
 func (a *Aggregator) consumeLogs() {
 	for line := range a.logc {
 		// TODO: forward message to follower aggregator
-		// TODO: parse the message, send it to the right bucket
-		fmt.Printf("message received: %q\n", string(line))
 		msg, err := rfc5424.Parse(line)
 		if err != nil {
 			fmt.Println("ERROR PARSING:", err)
 			continue
 		}
-		fmt.Printf("MSG: %#v\n", msg)
+		a.getBuffer(msg.AppName).Add(msg)
 	}
+}
+
+func (a *Aggregator) getBuffer(id string) *ring.Buffer {
+	a.bmu.Lock()
+	defer a.bmu.Unlock()
+
+	if buf, ok := a.buffers[id]; ok {
+		return buf
+	}
+	buf := ring.NewBuffer()
+	a.buffers[id] = buf
+	return buf
 }
 
 func (a *Aggregator) readLogsFromConn(conn net.Conn) {
