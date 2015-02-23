@@ -78,6 +78,10 @@ func Format(hdr *Header, sd StructuredData, msg []byte) *Message {
 	return &Message{h, sd, msg}
 }
 
+func (m Message) Msg() string {
+	return string(m.Message)
+}
+
 func (m Message) WriteTo(w io.Writer) (int, error) {
 	if len(m.Message) > 0 {
 		return fmt.Fprintf(w, "%s %s %s", m.Header, m.StructuredData, m.Message)

@@ -1,20 +1,21 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"strconv"
 	"sync"
 
-	"github.com/flynn/flynn/logaggregator/rfc5424"
 	"github.com/flynn/flynn/logaggregator/ring"
 	"github.com/flynn/flynn/pkg/shutdown"
+	"github.com/flynn/flynn/pkg/syslog/rfc5424"
+	"github.com/flynn/flynn/pkg/syslog/rfc6587"
 )
 
 func main() {
@@ -42,7 +43,7 @@ type Aggregator struct {
 	bmu          sync.Mutex // protects buffers
 	buffers      map[string]*ring.Buffer
 	listener     net.Listener
-	logc         chan []byte
+	logc         chan *rfc5424.Message
 	numConsumers int
 	consumerwg   sync.WaitGroup
 	filerwg      sync.WaitGroup
@@ -58,7 +59,7 @@ func NewAggregator(addr string) *Aggregator {
 	return &Aggregator{
 		Addr:         "127.0.0.1:0",
 		buffers:      make(map[string]*ring.Buffer),
-		logc:         make(chan []byte),
+		logc:         make(chan *rfc5424.Message),
 		numConsumers: 10,
 		shutdown:     make(chan struct{}),
 	}
@@ -137,14 +138,9 @@ func (a *Aggregator) accept() {
 }
 
 func (a *Aggregator) consumeLogs() {
-	for line := range a.logc {
+	for msg := range a.logc {
 		// TODO: forward message to follower aggregator
-		msg, err := rfc5424.Parse(line)
-		if err != nil {
-			fmt.Println("ERROR PARSING:", err)
-			continue
-		}
-		a.getBuffer(msg.AppName).Add(msg)
+		a.getBuffer(string(msg.AppName)).Add(msg)
 	}
 }
 
@@ -174,14 +170,18 @@ func (a *Aggregator) readLogsFromConn(conn net.Conn) {
 		}
 	}()
 
-	s := bufio.NewScanner(conn)
-	s.Split(rfc6587Split)
-	for s.Scan() {
-		msg := s.Bytes()
-		// slice in msg could get modified on next Scan(), need to copy it
-		msgCopy := make([]byte, len(msg))
-		copy(msgCopy, msg)
-		a.logc <- msgCopy
+	r := rfc5424.NewReader(rfc6587.Scanner(conn))
+	for {
+		msg, err := r.ReadMessage()
+		if err == io.EOF {
+			return
+		}
+		if err != nil {
+			fmt.Println("logaggregator: conn error:", err)
+			return
+		}
+
+		a.logc <- msg
 	}
 }
 
